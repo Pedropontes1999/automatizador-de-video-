@@ -35,6 +35,9 @@ class Settings:
     #             (ex.: 60 s -> 0:00-0:59, 1:00-1:59, ...).
     anime_cut_mode: str = "ia"
     anime_fixed_seconds: int = 60
+    # Enquadramento 9:16 do anime: "blur" (vídeo inteiro sobre fundo
+    # desfocado, estilo canais de corte) ou "crop" (central preenchendo).
+    anime_framing: str = "blur"
 
     # --- IA ---------------------------------------------------------------
     language: str = "auto"                       # pt | en | es | auto
@@ -75,6 +78,12 @@ class Settings:
     progress_bar: bool = False                   # barra de progresso no rodapé
     music_path: str = ""                         # música de fundo ("" = sem)
     music_volume: int = 12                       # %
+
+    # --- Canal (selo com foto + nome + @, sobreposto nos shorts) ----------
+    channel_name: str = ""
+    channel_handle: str = ""                     # ex.: @_shimeji_
+    channel_avatar_path: str = ""                # foto do canal
+    channel_badge_position: str = "bottom"       # top | bottom
 
     # --- Narração por IA (edge-tts, requer internet) ----------------------
     tts_enabled: bool = False

@@ -311,12 +311,16 @@ class ShortsPipeline:
             out_w, out_h = s.resolution_width, s.resolution_height
             if anime_mode:
                 # Rosto de anime não é detectável pelo Haar Cascade (treinado
-                # em rostos reais): usa crop central estático 9:16, que
-                # funciona bem para cenas de anime e ainda pula o custo do
-                # rastreamento.
-                framing = FramingResult(
-                    centers=[(cut.start, 0.5)], face_found=True, multi_person=False,
-                )
+                # em rostos reais), então não há rastreamento. Enquadramento
+                # conforme a preferência: "blur" mostra o vídeo inteiro sobre
+                # ele mesmo desfocado (estilo canais de corte); "crop" faz
+                # crop central estático preenchendo a tela.
+                if s.anime_framing == "crop":
+                    framing = FramingResult(
+                        centers=[(cut.start, 0.5)], face_found=True, multi_person=False,
+                    )
+                else:
+                    framing = FramingResult([], face_found=False, multi_person=False)
             else:
                 framing = tracker.track(video_path, cut.start, cut.end)
             framing = self._remap_framing(framing, cut.start, remapper)

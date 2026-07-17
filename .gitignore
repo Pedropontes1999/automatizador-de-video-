@@ -14,6 +14,7 @@ autoshorts.db
 
 # Configuração local (caminhos e preferências desta máquina)
 config.json
+assets/channel_badge.png
 
 # IDE
 .idea/

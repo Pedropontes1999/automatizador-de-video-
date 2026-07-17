@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.config import constants as C
 from src.config.settings import Settings
 from src.utils.logger import get_logger
 
@@ -89,6 +90,17 @@ def _video_steps(spec: BrandingSpec) -> list[tuple[str, str]]:
         steps.append((prelude, "[wm]overlay=" + f"{x}:{y}"))
     elif s.watermark_path:
         logger.warning("Marca d'água não encontrada: %s", s.watermark_path)
+
+    # Selo do canal (foto + nome + @), centralizado no topo ou rodapé.
+    if (s.channel_name or s.channel_handle) and C.CHANNEL_BADGE_FILE.exists():
+        badge_w = int(spec.out_width * 0.55)
+        badge_w -= badge_w % 2
+        y = "90" if s.channel_badge_position == "top" else "H-h-90"
+        prelude = (
+            f"movie='{_escape_path(C.CHANNEL_BADGE_FILE)}',"
+            f"scale={badge_w}:-1,format=rgba[badge]"
+        )
+        steps.append((prelude, f"[badge]overlay=(W-w)/2:{y}"))
 
     font = _find_font()
     if s.hook_text.strip() and font:

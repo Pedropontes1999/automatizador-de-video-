@@ -84,6 +84,19 @@ SUPPORTED_LANGUAGES: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Estilo / identidade visual
 # ---------------------------------------------------------------------------
+# Selo do canal (gerado a partir de nome/@/foto na página Estilo)
+CHANNEL_BADGE_FILE: Path = ASSETS_DIR / "channel_badge.png"
+BADGE_POSITIONS: dict[str, str] = {
+    "bottom": "Rodapé (faixa desfocada de baixo)",
+    "top": "Topo (faixa desfocada de cima)",
+}
+
+# Enquadramento 9:16 do modo anime
+ANIME_FRAMING: dict[str, str] = {
+    "blur": "Vídeo inteiro + fundo desfocado (estilo canais de corte)",
+    "crop": "Crop central preenchendo a tela",
+}
+
 WATERMARK_POSITIONS: dict[str, str] = {
     "top-left": "Canto superior esquerdo",
     "top-right": "Canto superior direito",

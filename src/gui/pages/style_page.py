@@ -58,6 +58,30 @@ class StylePage(QWidget):
         form = QFormLayout(content)
         form.setSpacing(10)
 
+        # -- Canal --------------------------------------------------------- #
+        form.addRow(self._section("📺 Canal (selo com foto, nome e @)"))
+        self.channel_name = QLineEdit()
+        self.channel_name.setPlaceholderText("Ex.: Tio Shimeji")
+        self.channel_handle = QLineEdit()
+        self.channel_handle.setPlaceholderText("Ex.: @_shimeji_")
+        self.channel_avatar = QLineEdit()
+        self.channel_avatar.setReadOnly(True)
+        self.channel_avatar.setPlaceholderText("Foto do canal (opcional)")
+        self.badge_position = QComboBox()
+        for slug, label in C.BADGE_POSITIONS.items():
+            self.badge_position.addItem(label, userData=slug)
+        form.addRow("Nome do canal:", self.channel_name)
+        form.addRow("Arroba (@):", self.channel_handle)
+        form.addRow("Foto:", self._file_row(self.channel_avatar, self._pick_avatar))
+        form.addRow("Posição do selo:", self.badge_position)
+
+        # -- Enquadramento do anime ----------------------------------------- #
+        form.addRow(self._section("🎞 Enquadramento 9:16 (modo anime)"))
+        self.anime_framing = QComboBox()
+        for slug, label in C.ANIME_FRAMING.items():
+            self.anime_framing.addItem(label, userData=slug)
+        form.addRow("Formato:", self.anime_framing)
+
         # -- Marca d'água ------------------------------------------------- #
         form.addRow(self._section("🖼 Marca d'água"))
         self.watermark_path = QLineEdit()
@@ -165,6 +189,14 @@ class StylePage(QWidget):
         if path:
             self.watermark_path.setText(path)
 
+    def _pick_avatar(self) -> None:
+        patterns = " ".join(f"*{ext}" for ext in C.SUPPORTED_IMAGE_EXTENSIONS)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Escolher foto do canal", "", f"Imagens ({patterns})",
+        )
+        if path:
+            self.channel_avatar.setText(path)
+
     def _pick_music(self) -> None:
         patterns = " ".join(f"*{ext}" for ext in C.SUPPORTED_AUDIO_EXTENSIONS)
         path, _ = QFileDialog.getOpenFileName(
@@ -176,6 +208,13 @@ class StylePage(QWidget):
     # ------------------------------------------------------------------ #
     def _load_values(self) -> None:
         s = self.settings
+        self.channel_name.setText(s.channel_name)
+        self.channel_handle.setText(s.channel_handle)
+        self.channel_avatar.setText(s.channel_avatar_path)
+        badge_index = self.badge_position.findData(s.channel_badge_position)
+        self.badge_position.setCurrentIndex(max(badge_index, 0))
+        framing_index = self.anime_framing.findData(s.anime_framing)
+        self.anime_framing.setCurrentIndex(max(framing_index, 0))
         self.watermark_path.setText(s.watermark_path)
         index = self.watermark_position.findData(s.watermark_position)
         self.watermark_position.setCurrentIndex(max(index, 0))
@@ -192,8 +231,20 @@ class StylePage(QWidget):
         self.tts_text.setPlainText(s.tts_text)
 
     def save(self) -> None:
-        """Grava o preset em Settings + config.json."""
+        """Grava o preset em Settings + config.json e regenera o selo."""
         s = self.settings
+        s.channel_name = self.channel_name.text().strip()
+        s.channel_handle = self.channel_handle.text().strip()
+        s.channel_avatar_path = self.channel_avatar.text().strip()
+        s.channel_badge_position = self.badge_position.currentData()
+        s.anime_framing = self.anime_framing.currentData()
+        if s.channel_name or s.channel_handle:
+            from src.utils.badge import generate_badge
+
+            generate_badge(
+                s.channel_name, s.channel_handle, s.channel_avatar_path,
+                C.CHANNEL_BADGE_FILE,
+            )
         s.watermark_path = self.watermark_path.text().strip()
         s.watermark_position = self.watermark_position.currentData()
         s.watermark_size = self.watermark_size.value()
