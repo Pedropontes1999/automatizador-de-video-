@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Dados gerados pela aplicação
+logs/
+temp/
+output/
+downloads/
+cache/
+autoshorts.db
+
+# Configuração local (caminhos e preferências desta máquina)
+config.json
+
+# IDE
+.idea/
+.vscode/
