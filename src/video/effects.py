@@ -63,6 +63,12 @@ def build_effects_chain(
     se ambos estiverem ativos, por ser mais marcante em Shorts).
     """
     chain: list[str] = []
+    if effects.get("jump_zoom") or effects.get("auto_zoom"):
+        # zoompan gera frames por contagem própria (`on`/fps); se o vídeo de
+        # origem não estiver em taxa de quadros perfeitamente constante, isso
+        # dessincroniza vídeo e áudio ao longo do corte. Forçar CFR aqui,
+        # logo antes do zoompan, elimina o desvio.
+        chain.append(f"fps={fps}")
     if effects.get("jump_zoom"):
         chain.append(jump_zoom_filter(width, height, fps))
     elif effects.get("auto_zoom"):

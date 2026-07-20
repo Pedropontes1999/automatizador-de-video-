@@ -24,9 +24,12 @@ CONFIG_FILE: Path = PROJECT_ROOT / "config.json"
 DATABASE_FILE: Path = PROJECT_ROOT / "autoshorts.db"
 PLUGINS_DIR: Path = SRC_DIR / "plugins"
 
+# Vídeos editados na aba Editor (marca d'água / narração, sem corte por IA).
+EDITOR_OUTPUT_DIR: Path = OUTPUT_DIR / "editados"
+
 REQUIRED_FOLDERS: tuple[Path, ...] = (
     LOGS_DIR, TEMP_DIR, CACHE_DIR, OUTPUT_DIR, DOWNLOADS_DIR,
-    ASSETS_DIR, FONTS_DIR, ICONS_DIR,
+    ASSETS_DIR, FONTS_DIR, ICONS_DIR, EDITOR_OUTPUT_DIR,
 )
 
 # ---------------------------------------------------------------------------
@@ -105,7 +108,7 @@ WATERMARK_POSITIONS: dict[str, str] = {
 }
 SUPPORTED_IMAGE_EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".webp")
 SUPPORTED_AUDIO_EXTENSIONS: tuple[str, ...] = (
-    ".mp3", ".wav", ".m4a", ".ogg", ".flac",
+    ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac", ".wma",
     ".mp4", ".mkv", ".webm", ".mov",  # containers de vídeo: usa só a trilha de áudio
 )
 

@@ -112,6 +112,22 @@ class Settings:
     redub_keep_background: bool = True
     redub_background_volume: int = 70              # % do volume original
 
+    # --- Editor Simples (aba Editor Simples, edição sem cortes por IA) ----
+    # Marca d'água e narração aplicadas a um vídeo inteiro, sem passar pelo
+    # pipeline de análise/corte. Independente do preset da página Estilo e
+    # da aba Editor (abertura com narração/estática) acima.
+    simple_editor_watermark_path: str = ""
+    simple_editor_watermark_position: str = "top-right"
+    simple_editor_watermark_size: int = 12              # % da largura do vídeo
+    simple_editor_watermark_opacity: int = 70           # %
+    simple_editor_music_path: str = ""                  # música de fundo ("" = sem)
+    simple_editor_music_volume: int = 20                # %
+    simple_editor_narration_enabled: bool = False
+    simple_editor_narration_text: str = ""              # texto narrado
+    simple_editor_narration_voice: str = C.TTS_DEFAULT_VOICE
+    simple_editor_narration_position: str = "start"     # start | custom | end
+    simple_editor_narration_time: float = 0.0           # segundos (só quando "custom")
+
     # --- Interface --------------------------------------------------------
     theme: str = "dark"
     parallel_exports: int = 2

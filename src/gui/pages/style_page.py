@@ -6,6 +6,7 @@ música de fundo e narração (vozes Microsoft via edge-tts).
 """
 from __future__ import annotations
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -38,8 +39,13 @@ class StylePage(QWidget):
     def __init__(self, settings: Settings) -> None:
         super().__init__()
         self.settings = settings
+        # Debounce para campos de texto: evita gravar em disco a cada tecla.
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.timeout.connect(self.save)
         self._build_ui()
         self._load_values()
+        self._connect_autosave()
 
     # ------------------------------------------------------------------ #
     def _build_ui(self) -> None:
@@ -208,6 +214,36 @@ class StylePage(QWidget):
         layout.addWidget(choose)
         layout.addWidget(clear)
         return row
+
+    def _connect_autosave(self) -> None:
+        """Salva automaticamente a cada mudança — sem precisar clicar em
+        "Salvar estilo" nem redigitar tudo na próxima vez que abrir o app.
+
+        Campos de texto usam um pequeno debounce (evita gravar a cada tecla);
+        combos/checkboxes/spinboxes salvam na hora, já que mudam com pouca
+        frequência.
+        """
+        def debounced(*_args) -> None:
+            self._save_timer.start(500)
+
+        for line_edit in (
+            self.channel_name, self.channel_handle, self.channel_avatar,
+            self.watermark_path, self.hook_text, self.music_path,
+        ):
+            line_edit.textChanged.connect(debounced)
+        self.tts_text.textChanged.connect(debounced)
+
+        for combo in (
+            self.badge_position, self.anime_framing, self.watermark_position,
+            self.tts_voice,
+        ):
+            combo.currentIndexChanged.connect(lambda _i: self.save())
+
+        for checkbox in (self.show_part_number, self.progress_bar, self.tts_enabled):
+            checkbox.toggled.connect(lambda _c: self.save())
+
+        for spinbox in (self.watermark_size, self.watermark_opacity, self.music_volume):
+            spinbox.valueChanged.connect(debounced)
 
     # ------------------------------------------------------------------ #
     def _pick_watermark(self) -> None:

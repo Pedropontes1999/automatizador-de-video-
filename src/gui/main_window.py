@@ -26,6 +26,7 @@ from src.gui.pages.history_page import HistoryPage
 from src.gui.pages.home_page import HomePage
 from src.gui.pages.redub_page import RedubPage
 from src.gui.pages.settings_page import SettingsPage
+from src.gui.pages.simple_editor_page import SimpleEditorPage
 from src.gui.pages.style_page import StylePage
 from src.gui.theme import build_stylesheet
 from src.gui.widgets.sidebar import Sidebar
@@ -73,10 +74,12 @@ class MainWindow(QWidget):
         self.redub = RedubPage(self.settings)
         self.dashboard = DashboardPage()
         self.history = HistoryPage()
+        self.simple_editor_page = SimpleEditorPage(self.settings)
         self.style_page = StylePage(self.settings)
         self.settings_page = SettingsPage(self.settings)
         for page in (self.home, self.editor, self.redub, self.dashboard,
-                     self.history, self.style_page, self.settings_page):
+                     self.history, self.simple_editor_page, self.style_page,
+                     self.settings_page):
             self.pages.addWidget(page)
         root.addWidget(self.pages, stretch=1)
 
@@ -126,8 +129,11 @@ class MainWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+Return"), self, activated=self.home.request_analyze)
 
     def _save_current_page(self) -> None:
-        """Ctrl+S: salva a página aberta (Estilo ou Configurações)."""
-        if self.pages.currentWidget() is self.style_page:
+        """Ctrl+S: salva a página aberta (Editor, Estilo ou Configurações)."""
+        current = self.pages.currentWidget()
+        if current is self.editor_page:
+            self.editor_page.save()
+        elif current is self.style_page:
             self.style_page.save()
         else:
             self.settings_page.save()
@@ -396,4 +402,18 @@ class MainWindow(QWidget):
                 logger.warning("Worker não respondeu ao cancelamento; terminando.")
                 active.terminate()
                 active.wait(3000)
+
+        if self.simple_editor_page.is_running():
+            answer = QMessageBox.question(
+                self, "Sair",
+                "Há uma edição de vídeo em andamento. Cancelar e sair?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+            # A exportação via FFmpeg não é cancelável no meio (chamada
+            # bloqueante única); espera terminar e força se necessário.
+            if not self.simple_editor_page.wait_running_worker(8000):
+                logger.warning("Edição não respondeu ao fechar; terminando.")
+                self.simple_editor_page.terminate_running_worker()
         event.accept()

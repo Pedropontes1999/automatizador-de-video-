@@ -8,8 +8,18 @@ Uso:
 """
 from __future__ import annotations
 
+import os
 import sys
 import traceback
+
+# Rodando via pythonw.exe (sem console), sys.stdout/stderr vêm como None.
+# Bibliotecas que escrevem barras de progresso nesses streams (ex.: tqdm no
+# download de modelos do Whisper) quebram com AttributeError. Redireciona
+# para os.devnull antes de qualquer import que possa usá-los.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 

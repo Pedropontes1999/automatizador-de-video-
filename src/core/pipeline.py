@@ -45,7 +45,7 @@ from src.utils.paths import (
     sanitize_filename,
     transcript_cache_path,
 )
-from src.video.branding import BrandingSpec, apply_branding
+from src.video.branding import BrandingSpec, apply_branding, apply_tts_freeze_intro
 from src.video.downloader import download_video, is_youtube_url
 from src.video.effects import build_effects_chain
 from src.video.exporter import build_filter_complex, export_short, extract_segment
@@ -368,7 +368,7 @@ class ShortsPipeline:
         )
 
         # 4.5) Estilo/identidade visual (página Estilo): marca d'água, textos,
-        # barra de progresso, música de fundo e narração por IA.
+        # barra de progresso e música de fundo.
         part_text = (
             cut.title if cut.category == "sequencial" and s.show_part_number else ""
         )
@@ -380,12 +380,13 @@ class ShortsPipeline:
             workdir=temp_dir,
             tag=f"cut_{rank:02d}",
             part_text=part_text,
-            tts_path=tts_path,
-            tts_duration=tts_seconds,
             source_start=cut.start,
             source_duration=info["duration"],
             music_duration=music_duration,
         ))
+        # 4.6) Narração por IA: congela o primeiro frame durante a fala em vez
+        # de tocar por cima do vídeo já em andamento (evita dessincronia).
+        graph = apply_tts_freeze_intro(graph, tts_path, tts_seconds)
 
         # 5) Exporta o MP4 final. Cortes sequenciais não têm nota viral,
         # então saem com nome limpo ("01_Parte_01.mp4").

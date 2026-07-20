@@ -12,6 +12,7 @@ timestamps das palavras são convertidos para a linha do tempo editada.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from src.models.domain import TranscriptWord
@@ -19,6 +20,12 @@ from src.subtitle.styles import SubtitleStyle
 from src.utils.logger import get_logger
 
 logger = get_logger("subtitles")
+
+# Qualquer pontuação/símbolo "órfão" que o Whisper às vezes cola no início de
+# uma palavra (vírgula, aspas retas/tipográficas, travessão, reticências...).
+# \W cobre tudo que não é letra/número/underscore — mais robusto que uma
+# lista fixa de caracteres.
+_LEADING_JUNK_RE = re.compile(r"^\W+")
 
 
 class TimeRemapper:
@@ -162,8 +169,8 @@ def generate_ass(
     local_words: list[TranscriptWord] = []
     for w in words:
         # Limpa pontuação "órfã" que o Whisper cola no início das palavras
-        # (ex.: ",cara" -> "cara"); palavras vazias são puladas.
-        clean_text = w.text.strip().lstrip(",.;:!?…-–—")
+        # (ex.: ",cara" -> "cara", "'tá" -> "tá"); palavras vazias são puladas.
+        clean_text = _LEADING_JUNK_RE.sub("", w.text.strip())
         if not clean_text:
             continue
         w = TranscriptWord(text=clean_text, start=w.start, end=w.end)
@@ -189,7 +196,7 @@ def generate_ass(
             text = _render_block(block, i, style)
             lines.append(
                 f"Dialogue: 0,{_fmt_time(word.start)},{_fmt_time(end_time)},"
-                f"Main,,0,0,0,,{text}\n"
+                f"Main,,0,0,0,{text}\n"
             )
 
     output_path = Path(output_path)

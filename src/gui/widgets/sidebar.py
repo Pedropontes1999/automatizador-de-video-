@@ -17,6 +17,7 @@ class Sidebar(QWidget):
         ("🗣️", "Redublagem"),
         ("📊", "Dashboard"),
         ("🕘", "Histórico"),
+        ("🖊️", "Editor Simples"),
         ("🎨", "Estilo"),
         ("⚙️", "Configurações"),
     )

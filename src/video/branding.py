@@ -49,8 +49,6 @@ class BrandingSpec:
     workdir: Path            # pasta temp para os .txt do drawtext
     tag: str = "cut"         # prefixo único por corte (evita colisão de .txt)
     part_text: str = ""      # ex.: "Parte 03" (vazio = não mostra)
-    tts_path: Path | None = None
-    tts_duration: float = 0.0
     source_start: float = 0.0     # posição do corte no vídeo de origem (s)
     source_duration: float = 0.0  # duração total do vídeo de origem (s)
     music_duration: float = 0.0   # duração da música de fundo (s); 0 = desconhecida
@@ -192,23 +190,13 @@ def _corner_expr(position: str) -> tuple[str, str]:
 # Áudio
 # --------------------------------------------------------------------------- #
 def _audio_steps(spec: BrandingSpec) -> list[tuple[str, str]]:
-    """Narração (com ducking do áudio original) e música de fundo."""
+    """Música de fundo (a narração é tratada à parte, em `apply_tts_freeze_intro`)."""
     s = spec.settings
     steps: list[tuple[str, str]] = []
 
     if s.original_audio_volume != 100:
         vol = max(0.0, s.original_audio_volume / 100.0)
         steps.append(("", f"volume={vol:.2f}"))
-
-    if spec.tts_path is not None and spec.tts_duration > 0:
-        prelude = f"amovie='{_escape_path(spec.tts_path)}',aresample=48000[tts]"
-        # Abaixa o áudio original enquanto a narração fala (ducking simples).
-        duck = f"volume=0.25:enable='lt(t,{spec.tts_duration:.2f})'"
-        chain = (
-            f"{duck}[aduck];[aduck][tts]"
-            f"amix=inputs=2:duration=first:dropout_transition=0:normalize=0"
-        )
-        steps.append((prelude, chain))
 
     if s.music_path and Path(s.music_path).exists():
         volume = max(0.0, min(s.music_volume / 100.0, 1.0))
@@ -238,6 +226,26 @@ def _music_seek_point(spec: BrandingSpec) -> float:
         return 0.0
     progress = min(max(spec.source_start / spec.source_duration, 0.0), 1.0)
     return progress * usable
+
+
+def apply_tts_freeze_intro(graph: str, tts_path: Path | None, tts_seconds: float) -> str:
+    """Congela o primeiro frame do vídeo enquanto a narração de abertura fala.
+
+    Antes a narração tocava por cima do vídeo já em andamento (ducking), o que
+    dessincronizava a fala da imagem. Agora o corte fica parado no primeiro
+    frame durante a narração; só quando ela termina o vídeo começa a rodar —
+    o corte fica `tts_seconds` mais longo no total.
+    """
+    if tts_path is None or tts_seconds <= 0:
+        return graph
+    graph = graph.replace("[vout]", "[vpre]").replace("[aout]", "[apre]")
+    graph += (
+        f";amovie='{_escape_path(tts_path)}',aresample=48000,apad,"
+        f"atrim=duration={tts_seconds:.3f}[introa]"
+        f";[vpre]tpad=start_duration={tts_seconds:.3f}:start_mode=clone[vout]"
+        f";[introa][apre]concat=n=2:v=0:a=1[aout]"
+    )
+    return graph
 
 
 # --------------------------------------------------------------------------- #
