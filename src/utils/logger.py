@@ -14,7 +14,9 @@ from typing import Callable
 from src.config.constants import LOGS_DIR
 
 _FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
-_gui_callback: Callable[[str, str], None] | None = None
+# Lista (não um único callback): mais de uma página pode ter seu próprio
+# LogPanel (ex.: Início e Editor) e todas precisam receber os logs.
+_gui_callbacks: list[Callable[[str, str], None]] = []
 _configured = False
 
 
@@ -22,18 +24,22 @@ class QtLogHandler(logging.Handler):
     """Handler que envia logs para a GUI via callback (nível, mensagem)."""
 
     def emit(self, record: logging.LogRecord) -> None:  # noqa: D102
-        if _gui_callback is None:
+        if not _gui_callbacks:
             return
         try:
-            _gui_callback(record.levelname, self.format(record))
+            message = self.format(record)
         except Exception:  # noqa: BLE001 - log nunca pode derrubar a app
-            pass
+            return
+        for callback in list(_gui_callbacks):
+            try:
+                callback(record.levelname, message)
+            except Exception:  # noqa: BLE001 - log nunca pode derrubar a app
+                pass
 
 
 def register_gui_callback(callback: Callable[[str, str], None]) -> None:
-    """Registra o callback usado pelo painel de logs da interface."""
-    global _gui_callback
-    _gui_callback = callback
+    """Registra um callback usado por um painel de logs da interface."""
+    _gui_callbacks.append(callback)
 
 
 def _configure_root() -> None:

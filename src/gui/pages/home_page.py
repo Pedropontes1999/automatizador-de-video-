@@ -8,6 +8,7 @@ import time
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -35,6 +36,7 @@ class HomePage(QWidget):
     categoryChanged = Signal(str)    # slug do tipo de vídeo (geral/anime/...)
     cutModeChanged = Signal(str)     # modo de corte do anime (ia/tempo)
     fixedDurationChanged = Signal(int)  # duração de cada corte no modo tempo
+    subtitleToggled = Signal(bool)   # gerar/queimar legenda automática no corte
     pauseRequested = Signal()
     resumeRequested = Signal()
     cancelRequested = Signal()
@@ -84,6 +86,18 @@ class HomePage(QWidget):
             category_row.addWidget(button)
         category_row.addStretch(1)
         root.addLayout(category_row)
+
+        # -- Legenda: se marcado, o corte sai com legenda queimada -------- #
+        subtitle_row = QHBoxLayout()
+        self.subtitle_checkbox = QCheckBox("💬 Adicionar legenda ao corte")
+        self.subtitle_checkbox.setToolTip(
+            "Marcado: gera e queima a legenda automática no vídeo final.\n"
+            "Desmarcado: o corte sai sem legenda."
+        )
+        self.subtitle_checkbox.toggled.connect(self.subtitleToggled.emit)
+        subtitle_row.addWidget(self.subtitle_checkbox)
+        subtitle_row.addStretch(1)
+        root.addLayout(subtitle_row)
 
         # -- Opções do anime: modo de corte + duração fixa ---------------- #
         self._anime_options = QWidget()
@@ -207,6 +221,10 @@ class HomePage(QWidget):
         button.setChecked(True)
         self.duration_spin.setValue(seconds)
         self.duration_spin.setEnabled(mode == "tempo")
+
+    def set_subtitle_enabled(self, enabled: bool) -> None:
+        """Restaura o estado do checkbox de legenda (vindo do config)."""
+        self.subtitle_checkbox.setChecked(enabled)
 
     def set_source(self, source: str) -> None:
         """Define o vídeo/URL de origem e habilita o botão Analisar."""

@@ -229,6 +229,16 @@ class ShortsPipeline:
             if tts_path is not None:
                 tts_seconds = audio_duration(tts_path)
 
+        # -- Etapa 3.6: duração da música de fundo (uma vez, evita reabrir o
+        # arquivo a cada corte) — usada para variar o ponto de início da
+        # música em cada corte em vez de sempre tocar do início dela.
+        music_duration = 0.0
+        if self.settings.music_path and Path(self.settings.music_path).exists():
+            try:
+                music_duration = audio_duration(Path(self.settings.music_path))
+            except Exception as exc:  # noqa: BLE001 - música é só estilo, não derruba o job
+                logger.warning("Não foi possível medir a música de fundo (%s).", exc)
+
         # -- Etapa 4: edição e exportação de cada corte ------------------ #
         project.status = "cutting"
         tracker = FaceTracker()
@@ -242,6 +252,7 @@ class ShortsPipeline:
                     cut, rank, video_path, info, transcription,
                     tracker, temp_dir, output_dir,
                     tts_path=tts_path, tts_seconds=tts_seconds,
+                    music_duration=music_duration,
                 )
                 cut.status = "done"
             except Exception as exc:  # noqa: BLE001 - um corte não derruba o job
@@ -266,6 +277,7 @@ class ShortsPipeline:
         output_dir: Path,
         tts_path: Path | None = None,
         tts_seconds: float = 0.0,
+        music_duration: float = 0.0,
     ) -> None:
         """Edita e exporta um único corte (roda dentro do loop do pipeline)."""
         s = self.settings
@@ -370,6 +382,9 @@ class ShortsPipeline:
             part_text=part_text,
             tts_path=tts_path,
             tts_duration=tts_seconds,
+            source_start=cut.start,
+            source_duration=info["duration"],
+            music_duration=music_duration,
         ))
 
         # 5) Exporta o MP4 final. Cortes sequenciais não têm nota viral,

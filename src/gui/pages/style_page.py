@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -25,6 +26,8 @@ from PySide6.QtWidgets import (
 from src.config import constants as C
 from src.config.settings import Settings
 from src.utils.logger import get_logger
+from src.video.downloader import is_youtube_url
+from src.workers.audio_download_worker import AudioDownloadWorker
 
 logger = get_logger("style_page")
 
@@ -119,12 +122,38 @@ class StylePage(QWidget):
         )
         form.addRow("", self.progress_bar)
 
+        # -- Volumes --------------------------------------------------------- #
+        form.addRow(self._section("🔊 Volumes"))
+        self.original_audio_volume = QSpinBox(minimum=0, maximum=200, suffix=" %")
+        self.original_audio_volume.setToolTip(
+            "Volume do áudio original do vídeo (100% = sem alteração)"
+        )
+        form.addRow("Áudio original do vídeo:", self.original_audio_volume)
+
         # -- Música de fundo ------------------------------------------------ #
         form.addRow(self._section("🎵 Música de fundo"))
+        self.music_url = QLineEdit()
+        self.music_url.setPlaceholderText("Cole o link do YouTube da música...")
+        self.music_url.returnPressed.connect(self._download_music_from_youtube)
+        self.music_download_btn = QPushButton("⬇ Baixar áudio")
+        self.music_download_btn.clicked.connect(self._download_music_from_youtube)
+        url_row = QWidget()
+        url_layout = QHBoxLayout(url_row)
+        url_layout.setContentsMargins(0, 0, 0, 0)
+        url_layout.addWidget(self.music_url, stretch=1)
+        url_layout.addWidget(self.music_download_btn)
+        form.addRow("Link do YouTube:", url_row)
+
+        self.music_status = QLabel("")
+        self.music_status.setObjectName("Muted")
+        form.addRow("", self.music_status)
+
         self.music_path = QLineEdit()
         self.music_path.setReadOnly(True)
-        self.music_path.setPlaceholderText("Nenhuma música escolhida (opcional)")
-        form.addRow("Arquivo:", self._file_row(self.music_path, self._pick_music))
+        self.music_path.setPlaceholderText(
+            "Nenhuma música baixada (ou escolha um arquivo local abaixo)"
+        )
+        form.addRow("Arquivo atual:", self._file_row(self.music_path, self._pick_music))
         self.music_volume = QSpinBox(minimum=0, maximum=100, suffix=" %")
         self.music_volume.setToolTip("Volume da música em relação ao áudio original")
         form.addRow("Volume:", self.music_volume)
@@ -200,10 +229,41 @@ class StylePage(QWidget):
     def _pick_music(self) -> None:
         patterns = " ".join(f"*{ext}" for ext in C.SUPPORTED_AUDIO_EXTENSIONS)
         path, _ = QFileDialog.getOpenFileName(
-            self, "Escolher música de fundo", "", f"Áudios ({patterns})",
+            self, "Escolher música de fundo", "", f"Áudios/Vídeos ({patterns})",
         )
         if path:
             self.music_path.setText(path)
+
+    def _download_music_from_youtube(self) -> None:
+        url = self.music_url.text().strip()
+        if not is_youtube_url(url):
+            QMessageBox.warning(
+                self, "Link inválido",
+                "Cole um link válido do YouTube (youtube.com ou youtu.be).",
+            )
+            return
+        self.music_download_btn.setEnabled(False)
+        self.music_status.setText("Baixando áudio...")
+        # Referência guardada na instância: sem isso o QThread seria coletado
+        # pelo GC assim que este método retornasse, matando o download.
+        self._music_worker = AudioDownloadWorker(url)
+        self._music_worker.progressChanged.connect(
+            lambda _pct, msg: self.music_status.setText(msg)
+        )
+        self._music_worker.downloaded.connect(self._on_music_downloaded)
+        self._music_worker.failed.connect(self._on_music_download_failed)
+        self._music_worker.start()
+
+    def _on_music_downloaded(self, path: str) -> None:
+        self.music_path.setText(path)
+        self.music_status.setText("✅ Áudio baixado e definido como música de fundo.")
+        self.music_download_btn.setEnabled(True)
+        self.music_url.clear()
+
+    def _on_music_download_failed(self, message: str) -> None:
+        self.music_status.setText("")
+        self.music_download_btn.setEnabled(True)
+        QMessageBox.warning(self, "Erro ao baixar áudio", message)
 
     # ------------------------------------------------------------------ #
     def _load_values(self) -> None:
@@ -223,6 +283,7 @@ class StylePage(QWidget):
         self.hook_text.setText(s.hook_text)
         self.show_part_number.setChecked(s.show_part_number)
         self.progress_bar.setChecked(s.progress_bar)
+        self.original_audio_volume.setValue(s.original_audio_volume)
         self.music_path.setText(s.music_path)
         self.music_volume.setValue(s.music_volume)
         self.tts_enabled.setChecked(s.tts_enabled)
@@ -252,6 +313,7 @@ class StylePage(QWidget):
         s.hook_text = self.hook_text.text().strip()
         s.show_part_number = self.show_part_number.isChecked()
         s.progress_bar = self.progress_bar.isChecked()
+        s.original_audio_volume = self.original_audio_volume.value()
         s.music_path = self.music_path.text().strip()
         s.music_volume = self.music_volume.value()
         s.tts_enabled = self.tts_enabled.isChecked()

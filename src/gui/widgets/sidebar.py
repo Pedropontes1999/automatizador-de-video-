@@ -13,6 +13,8 @@ class Sidebar(QWidget):
     #: (ícone emoji, rótulo) na ordem das páginas do QStackedWidget.
     ITEMS: tuple[tuple[str, str], ...] = (
         ("🎬", "Início"),
+        ("🎞️", "Editor"),
+        ("🗣️", "Redublagem"),
         ("📊", "Dashboard"),
         ("🕘", "Histórico"),
         ("🎨", "Estilo"),

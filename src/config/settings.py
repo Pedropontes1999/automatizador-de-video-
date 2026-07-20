@@ -78,6 +78,7 @@ class Settings:
     progress_bar: bool = False                   # barra de progresso no rodapé
     music_path: str = ""                         # música de fundo ("" = sem)
     music_volume: int = 12                       # %
+    original_audio_volume: int = 100             # % (áudio original do vídeo)
 
     # --- Canal (selo com foto + nome + @, sobreposto nos shorts) ----------
     channel_name: str = ""
@@ -89,6 +90,27 @@ class Settings:
     tts_enabled: bool = False
     tts_text: str = ""                           # texto narrado no início do short
     tts_voice: str = C.TTS_DEFAULT_VOICE
+
+    # --- Editor de vídeo completo (aba Editor) -----------------------------
+    # Abertura opcional aplicada antes do vídeo original (sem cortar em
+    # Shorts): narração por IA e/ou transição de estática de TV.
+    editor_narration_enabled: bool = False
+    editor_narration_text: str = ""
+    editor_narration_voice: str = C.TTS_DEFAULT_VOICE
+    editor_static_enabled: bool = True
+    editor_static_seconds: int = 2                # 1-8s
+    # Música de fundo tocando por baixo da narração (independente da música
+    # da página Estilo, usada nos Shorts).
+    editor_music_path: str = ""
+    editor_music_volume: int = 20                 # %
+
+    # --- Redublagem por IA (aba Redublagem) --------------------------------
+    # Troca a voz do narrador de um vídeo já pronto por uma narração de IA,
+    # sincronizada por trecho, mantendo (opcionalmente) a música/efeitos de
+    # fundo originais via separação por IA (Demucs).
+    redub_voice: str = C.TTS_DEFAULT_VOICE
+    redub_keep_background: bool = True
+    redub_background_volume: int = 70              # % do volume original
 
     # --- Interface --------------------------------------------------------
     theme: str = "dark"

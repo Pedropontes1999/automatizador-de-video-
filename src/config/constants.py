@@ -104,7 +104,10 @@ WATERMARK_POSITIONS: dict[str, str] = {
     "bottom-right": "Canto inferior direito",
 }
 SUPPORTED_IMAGE_EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".webp")
-SUPPORTED_AUDIO_EXTENSIONS: tuple[str, ...] = (".mp3", ".wav", ".m4a", ".ogg", ".flac")
+SUPPORTED_AUDIO_EXTENSIONS: tuple[str, ...] = (
+    ".mp3", ".wav", ".m4a", ".ogg", ".flac",
+    ".mp4", ".mkv", ".webm", ".mov",  # containers de vídeo: usa só a trilha de áudio
+)
 
 # ---------------------------------------------------------------------------
 # Narração (TTS via edge-tts — vozes Microsoft, requer internet)

@@ -22,6 +22,9 @@ requests>=2.32.0
 # Narração por IA (vozes Microsoft - requer internet)
 edge-tts>=6.1.0
 
+# Separação de voz/música (Redublagem) - baixa modelo pré-treinado na 1a execução
+demucs>=4.1.0
+
 # Monitoramento de sistema (Dashboard)
 psutil>=5.9.8
 

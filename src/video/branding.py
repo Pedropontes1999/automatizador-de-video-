@@ -9,6 +9,7 @@ sem mexer nos inputs do FFmpeg.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +22,20 @@ logger = get_logger("branding")
 _MARGIN = 40  # px de respiro da marca d'água até a borda
 _BAR_HEIGHT = 14
 _BAR_COLOR = "0x5865F2"  # roxo do tema
+
+# A fonte usada no drawtext (Arial/Impact do Windows) não tem glifos de
+# emoji: em vez de "tofu boxes" (□□) no vídeo final, removemos esses
+# caracteres antes de gravar o texto.
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"   # emojis (símbolos, natureza, comida, etc.)
+    "\U0001F1E6-\U0001F1FF"   # bandeiras
+    "\U00002600-\U000027BF"   # emoticons e dingbats
+    "\U00002190-\U000021FF"   # setas
+    "\U00002B00-\U00002BFF"   # símbolos diversos e setas
+    "\U0000FE0F"              # variation selector (modificador de emoji)
+    "]+"
+)
 
 
 @dataclass
@@ -36,6 +51,9 @@ class BrandingSpec:
     part_text: str = ""      # ex.: "Parte 03" (vazio = não mostra)
     tts_path: Path | None = None
     tts_duration: float = 0.0
+    source_start: float = 0.0     # posição do corte no vídeo de origem (s)
+    source_duration: float = 0.0  # duração total do vídeo de origem (s)
+    music_duration: float = 0.0   # duração da música de fundo (s); 0 = desconhecida
 
 
 def apply_branding(graph: str, spec: BrandingSpec) -> str:
@@ -93,9 +111,18 @@ def _video_steps(spec: BrandingSpec) -> list[tuple[str, str]]:
 
     # Selo do canal (foto + nome + @), centralizado no topo ou rodapé.
     if (s.channel_name or s.channel_handle) and C.CHANNEL_BADGE_FILE.exists():
-        badge_w = int(spec.out_width * 0.55)
+        # Baseado na menor dimensão do quadro, não na largura: em vídeos
+        # verticais (Shorts) a largura já é a menor dimensão, mas no modo
+        # "original" (formato horizontal do vídeo de origem) a largura é a
+        # MAIOR dimensão — usar largura ali deixaria o selo gigante.
+        badge_w = int(min(spec.out_width, spec.out_height) * 0.55)
         badge_w -= badge_w % 2
-        y = "90" if s.channel_badge_position == "top" else "H-h-90"
+        if s.channel_badge_position == "top":
+            # Se houver gancho e/ou "Parte X", eles ocupam até ~y=270 no
+            # topo — sem essa folga o selo cairia por cima do texto.
+            y = "300" if (s.hook_text.strip() or spec.part_text) else "90"
+        else:
+            y = "H-h-90"
         prelude = (
             f"movie='{_escape_path(C.CHANNEL_BADGE_FILE)}',"
             f"scale={badge_w}:-1,format=rgba[badge]"
@@ -134,6 +161,7 @@ def _drawtext(text: str, font: str, size: int, y: int, textfile: Path) -> str:
     O texto vai em um arquivo (textfile=) em vez de inline: o filtergraph tem
     dois níveis de escape e qualquer apóstrofo/dois-pontos quebraria o filtro.
     """
+    text = _EMOJI_RE.sub("", text).strip()
     textfile.write_text(text, encoding="utf-8")
     return (
         f"drawtext=fontfile='{_escape_path(font)}':expansion=none"
@@ -168,6 +196,10 @@ def _audio_steps(spec: BrandingSpec) -> list[tuple[str, str]]:
     s = spec.settings
     steps: list[tuple[str, str]] = []
 
+    if s.original_audio_volume != 100:
+        vol = max(0.0, s.original_audio_volume / 100.0)
+        steps.append(("", f"volume={vol:.2f}"))
+
     if spec.tts_path is not None and spec.tts_duration > 0:
         prelude = f"amovie='{_escape_path(spec.tts_path)}',aresample=48000[tts]"
         # Abaixa o áudio original enquanto a narração fala (ducking simples).
@@ -180,8 +212,9 @@ def _audio_steps(spec: BrandingSpec) -> list[tuple[str, str]]:
 
     if s.music_path and Path(s.music_path).exists():
         volume = max(0.0, min(s.music_volume / 100.0, 1.0))
+        seek = _music_seek_point(spec)
         prelude = (
-            f"amovie='{_escape_path(s.music_path)}':loop=0,"
+            f"amovie='{_escape_path(s.music_path)}':seek_point={seek:.2f}:loop=0,"
             f"asetpts=N/SR/TB,aresample=48000,volume={volume:.2f}[bgm]"
         )
         chain = "[bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0"
@@ -189,6 +222,22 @@ def _audio_steps(spec: BrandingSpec) -> list[tuple[str, str]]:
     elif s.music_path:
         logger.warning("Música de fundo não encontrada: %s", s.music_path)
     return steps
+
+
+def _music_seek_point(spec: BrandingSpec) -> float:
+    """Ponto de início da música de fundo para este corte.
+
+    Sem isso, todo corte tocaria sempre o mesmo trecho inicial do arquivo de
+    música — perceptível quando a faixa é bem mais longa que o vídeo (ex.:
+    1h de música para um episódio de 14 min). Em vez disso, avança pela
+    música proporcionalmente à posição do corte dentro do vídeo de origem,
+    de forma determinística (mesmo vídeo => mesmo resultado).
+    """
+    usable = spec.music_duration - spec.duration
+    if usable <= 0 or spec.source_duration <= 0:
+        return 0.0
+    progress = min(max(spec.source_start / spec.source_duration, 0.0), 1.0)
+    return progress * usable
 
 
 # --------------------------------------------------------------------------- #
