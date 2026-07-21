@@ -27,12 +27,9 @@ PLUGINS_DIR: Path = SRC_DIR / "plugins"
 # Vídeos editados na aba Editor (marca d'água / narração, sem corte por IA).
 EDITOR_OUTPUT_DIR: Path = OUTPUT_DIR / "editados"
 
-# Modelos de voz do Piper (narração), baixados sob demanda na 1ª vez.
-PIPER_VOICES_DIR: Path = CACHE_DIR / "piper_voices"
-
 REQUIRED_FOLDERS: tuple[Path, ...] = (
     LOGS_DIR, TEMP_DIR, CACHE_DIR, OUTPUT_DIR, DOWNLOADS_DIR,
-    ASSETS_DIR, FONTS_DIR, ICONS_DIR, EDITOR_OUTPUT_DIR, PIPER_VOICES_DIR,
+    ASSETS_DIR, FONTS_DIR, ICONS_DIR, EDITOR_OUTPUT_DIR,
 )
 
 # ---------------------------------------------------------------------------
@@ -116,21 +113,22 @@ SUPPORTED_AUDIO_EXTENSIONS: tuple[str, ...] = (
 )
 
 # ---------------------------------------------------------------------------
-# Narração (TTS via Piper — vozes locais, offline)
+# Narração (TTS via XTTS v2/Coqui — local, offline, voz bem mais natural)
 # ---------------------------------------------------------------------------
-# Vozes Piper (ONNX, local e offline — trocado de edge-tts em 2026-07: sem
-# depender de rede, sem risco de travar o pipeline num timeout de servidor,
-# e ~100x mais rápido que edge-tts por trecho — viável até em vídeos com
-# milhares de trechos, como a Redublagem). Não há voz feminina pt-BR no
-# catálogo oficial do Piper no momento.
+# Trocado do Piper em 2026-07 por pedido explícito do usuário: Piper é ~10x
+# mais rápido, mas soa artificial demais; XTTS é bem mais humano só que
+# pesado — cada trecho leva ~10-12s na CPU (sem GPU NVIDIA/CUDA disponível
+# nesta máquina), então uma Redublagem de vídeo longo (centenas/milhares de
+# trechos) pode levar HORAS só na narração. Aceito conscientemente pela
+# qualidade da voz. Formato do id: "xtts:<idioma>:<nome do speaker>".
 TTS_VOICES: dict[str, str] = {
-    "pt_BR-faber-medium": "Faber (PT-BR, masculina)",
-    "pt_BR-cadu-medium": "Cadu (PT-BR, masculina)",
-    "pt_BR-jeff-medium": "Jeff (PT-BR, masculina)",
-    "en_US-lessac-medium": "Lessac (EN-US, masculina)",
-    "en_US-amy-medium": "Amy (EN-US, feminina)",
+    "xtts:pt:Xavier Hayasaka": "Xavier (masculina, jovem)",
+    "xtts:pt:Luis Moray": "Luis (masculina)",
+    "xtts:pt:Andrew Chipper": "Andrew (masculina)",
+    "xtts:pt:Ana Florence": "Ana (feminina)",
+    "xtts:pt:Alma María": "Alma (feminina)",
 }
-TTS_DEFAULT_VOICE: str = "pt_BR-faber-medium"
+TTS_DEFAULT_VOICE: str = "xtts:pt:Xavier Hayasaka"
 
 # ---------------------------------------------------------------------------
 # Legendas

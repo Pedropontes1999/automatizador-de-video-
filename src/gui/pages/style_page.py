@@ -2,7 +2,7 @@
 
 Aqui o usuário define o "preset" aplicado automaticamente a todo corte
 exportado: marca d'água, texto de gancho, "Parte X", barra de progresso,
-música de fundo e narração (vozes locais Piper, offline).
+música de fundo e narração (voz local XTTS, offline).
 """
 from __future__ import annotations
 
@@ -165,7 +165,7 @@ class StylePage(QWidget):
         form.addRow("Volume:", self.music_volume)
 
         # -- Narração por IA ------------------------------------------------ #
-        form.addRow(self._section("🎙 Narração por IA (offline — baixa o modelo na 1ª vez)"))
+        form.addRow(self._section("🎙 Narração por IA (offline, ~10-12s por trecho — baixa o modelo na 1ª vez)"))
         self.tts_enabled = QCheckBox("Narrar um texto no início de cada short")
         self.tts_voice = QComboBox()
         for voice, label in C.TTS_VOICES.items():

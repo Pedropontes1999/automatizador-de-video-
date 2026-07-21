@@ -123,7 +123,7 @@ class SimpleEditorPage(QWidget):
         form.addRow("", music_hint)
 
         # -- Narração por IA -------------------------------------------------- #
-        form.addRow(self._section("🎙 Narração por IA (offline — baixa o modelo na 1ª vez)"))
+        form.addRow(self._section("🎙 Narração por IA (offline, ~10-12s por trecho — baixa o modelo na 1ª vez)"))
         self.narration_enabled = QCheckBox("Narrar um texto em algum momento do vídeo")
         self.narration_voice = QComboBox()
         for voice, label in C.TTS_VOICES.items():

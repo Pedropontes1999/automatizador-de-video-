@@ -19,8 +19,12 @@ yt-dlp>=2024.5.27
 # Comunicação com Ollama (API local HTTP)
 requests>=2.32.0
 
-# Narração por IA (vozes Piper, local/offline - baixa cada voz na 1a vez)
-piper-tts>=1.5.0
+# Narração por IA (XTTS v2/Coqui, local/offline - baixa o modelo, ~1.9GB,
+# na 1a execução; pesado, ~10-12s por trecho na CPU, mas voz bem mais
+# natural que engines mais leves)
+coqui-tts[codec]>=0.27.0
+torchaudio>=2.3.0
+transformers>=4.57,<5
 
 # Separação de voz/música (Redublagem) - baixa modelo pré-treinado na 1a execução
 demucs>=4.1.0
