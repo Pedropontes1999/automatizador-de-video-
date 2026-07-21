@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -72,6 +73,13 @@ class EditorPage(QWidget):
         subtitle.setWordWrap(True)
         root.addWidget(subtitle)
 
+        # Formulário + entrada de vídeo ficam num painel rolável: assim a
+        # janela pode ser reduzida na vertical sem cortar os campos.
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(14)
+
         form = QFormLayout()
         form.setSpacing(10)
 
@@ -125,12 +133,12 @@ class EditorPage(QWidget):
         form.addRow("", self.static_enabled)
         form.addRow("Duração:", self.static_seconds)
 
-        root.addLayout(form)
+        content_layout.addLayout(form)
 
         # -- Entrada: drop area + campo de link ------------------------- #
         self.drop_area = DropArea()
         self.drop_area.fileSelected.connect(self.set_source)
-        root.addWidget(self.drop_area)
+        content_layout.addWidget(self.drop_area)
 
         url_row = QHBoxLayout()
         self.url_input = QLineEdit()
@@ -142,11 +150,16 @@ class EditorPage(QWidget):
         url_button.clicked.connect(self._use_url)
         url_row.addWidget(self.url_input, stretch=1)
         url_row.addWidget(url_button)
-        root.addLayout(url_row)
+        content_layout.addLayout(url_row)
 
         self.source_label = QLabel("Nenhum vídeo selecionado.")
         self.source_label.setObjectName("Muted")
-        root.addWidget(self.source_label)
+        content_layout.addWidget(self.source_label)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(content)
+        root.addWidget(scroll, stretch=1)
 
         # -- Ações ------------------------------------------------------- #
         actions = QHBoxLayout()
@@ -251,6 +264,10 @@ class EditorPage(QWidget):
         self.music_volume.setValue(s.editor_music_volume)
         self.static_enabled.setChecked(s.editor_static_enabled)
         self.static_seconds.setValue(s.editor_static_seconds)
+
+    def save(self) -> None:
+        """Persiste as opções da abertura (usado pelo atalho Ctrl+S)."""
+        self._save_values()
 
     def _save_values(self) -> None:
         """Persiste as opções da abertura em Settings/config.json."""

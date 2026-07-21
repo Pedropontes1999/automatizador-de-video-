@@ -47,8 +47,17 @@ def _load_model() -> "XttsApi":
         return _model
 
 
-def synthesize(text: str, voice: str, output_path: str | Path) -> Path | None:
+def synthesize(
+    text: str, voice: str, output_path: str | Path,
+    voice_reference: str | Path | None = None,
+) -> Path | None:
     """Gera o áudio (WAV) da narração para o texto dado.
+
+    Args:
+        voice_reference: caminho de um áudio de referência (poucos segundos
+            de fala limpa, sem música/ruído de fundo) para clonar essa voz
+            em vez de usar um dos speakers prontos do XTTS — costuma soar
+            bem mais natural. Quando informado, ignora o speaker do `voice`.
 
     Returns:
         Caminho do WAV gerado, ou None se a síntese falhou.
@@ -65,9 +74,15 @@ def synthesize(text: str, voice: str, output_path: str | Path) -> Path | None:
             logger.warning("Voz '%s' inválida; usando a padrão.", voice)
             lang, speaker = _parse_voice(TTS_DEFAULT_VOICE)
         model = _load_model()
-        model.tts_to_file(
-            text=text, speaker=speaker, language=lang, file_path=str(output_path),
-        )
+        if voice_reference:
+            model.tts_to_file(
+                text=text, speaker_wav=str(voice_reference), language=lang,
+                file_path=str(output_path),
+            )
+        else:
+            model.tts_to_file(
+                text=text, speaker=speaker, language=lang, file_path=str(output_path),
+            )
     except ImportError:
         logger.error("Pacote coqui-tts não instalado (pip install coqui-tts[codec]).")
         return None

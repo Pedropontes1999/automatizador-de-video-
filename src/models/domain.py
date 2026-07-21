@@ -28,11 +28,29 @@ class TranscriptSegment:
     start: float
     end: float
     words: list[TranscriptWord] = field(default_factory=list)
+    # Sinais de confiança que o próprio Whisper reporta por segmento (ver
+    # openai-whisper `DecodingResult`). Usados na Redublagem pra descartar
+    # trechos que provavelmente não são fala real do narrador (efeito
+    # sonoro, música, ruído) e que o Whisper "alucinou" como texto.
+    no_speech_prob: float = 0.0
+    avg_logprob: float = 0.0
+    compression_ratio: float = 0.0
 
     @property
     def duration(self) -> float:
         """Duração do segmento em segundos."""
         return self.end - self.start
+
+    @property
+    def is_confident_speech(self) -> bool:
+        """Heurística (mesmos limiares padrão do Whisper) pra saber se o
+        segmento é fala de verdade, e não ruído/efeito/música mal
+        transcrito como texto."""
+        return (
+            self.no_speech_prob < 0.6
+            and self.avg_logprob > -1.0
+            and self.compression_ratio < 2.4
+        )
 
 
 @dataclass

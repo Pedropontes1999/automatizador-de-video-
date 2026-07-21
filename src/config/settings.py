@@ -111,6 +111,24 @@ class Settings:
     redub_voice: str = C.TTS_DEFAULT_VOICE
     redub_keep_background: bool = True
     redub_background_volume: int = 70              # % do volume original
+    # Áudio de referência opcional (voice cloning): quando definido, a IA
+    # clona essa voz em vez de usar um dos speakers prontos do XTTS acima.
+    redub_voice_reference: str = ""
+
+    # --- Remover Marca d'Água (aba Remover Marca d'Água) --------------------
+    # Guarda o último retângulo marcado (coords do vídeo original) pra
+    # pré-preencher no próximo vídeo — útil quando a marca fica sempre no
+    # mesmo lugar em todos os vídeos de um canal.
+    watermark_region_x: int = -1
+    watermark_region_y: int = -1
+    watermark_region_w: int = 0
+    watermark_region_h: int = 0
+    # Como tratar a área marcada: "image"/"text" colam uma imagem/texto por
+    # cima depois do delogo (ver `remove_and_cover_watermark`); "blur" só
+    # borra a área, sem reconstruir nem colar nada.
+    watermark_cover_mode: str = "image"
+    watermark_cover_image_path: str = ""
+    watermark_cover_text: str = ""
 
     # --- Editor Simples (aba Editor Simples, edição sem cortes por IA) ----
     # Marca d'água e narração aplicadas a um vídeo inteiro, sem passar pelo

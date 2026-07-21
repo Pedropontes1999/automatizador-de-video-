@@ -6,6 +6,10 @@ música de fundo e narração (voz local XTTS, offline).
 """
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
+
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -17,6 +21,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -26,9 +31,13 @@ from PySide6.QtWidgets import (
 
 from src.config import constants as C
 from src.config.settings import Settings
+from src.gui.widgets.drop_area import DropArea
 from src.utils.logger import get_logger
+from src.utils.paths import sanitize_filename
 from src.video.downloader import is_youtube_url
+from src.video.simple_editor import EditOptions
 from src.workers.audio_download_worker import AudioDownloadWorker
+from src.workers.simple_editor_worker import SimpleEditorWorker
 
 logger = get_logger("style_page")
 
@@ -43,6 +52,9 @@ class StylePage(QWidget):
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self.save)
+        self._test_source: str | None = None
+        self._test_worker: SimpleEditorWorker | None = None
+        self._test_last_output: str | None = None
         self._build_ui()
         self._load_values()
         self._connect_autosave()
@@ -108,6 +120,47 @@ class StylePage(QWidget):
         form.addRow("Posição:", self.watermark_position)
         form.addRow("Tamanho:", self.watermark_size)
         form.addRow("Opacidade:", self.watermark_opacity)
+
+        # -- Aplicar só a marca d'água num vídeo --------------------------- #
+        form.addRow(self._section("🎬 Aplicar só a marca d'água num vídeo"))
+        watermark_test_hint = QLabel(
+            "Roda a edição agora mesmo, só com a marca d'água acima (sem "
+            "gancho, barra de progresso, música ou narração) — não precisa "
+            "ir até o Editor Simples pra testar."
+        )
+        watermark_test_hint.setObjectName("Muted")
+        watermark_test_hint.setWordWrap(True)
+        form.addRow("", watermark_test_hint)
+
+        self.watermark_test_drop = DropArea()
+        self.watermark_test_drop.setMinimumHeight(100)
+        self.watermark_test_drop.fileSelected.connect(self._set_watermark_test_source)
+        form.addRow("", self.watermark_test_drop)
+        self.watermark_test_source_label = QLabel("Nenhum vídeo selecionado.")
+        self.watermark_test_source_label.setObjectName("Muted")
+        form.addRow("", self.watermark_test_source_label)
+
+        self.watermark_test_button = QPushButton("🖼 Aplicar marca d'água")
+        self.watermark_test_button.setEnabled(False)
+        self.watermark_test_button.clicked.connect(self._apply_watermark_test)
+        self.watermark_test_open_folder = QPushButton("📂 Abrir pasta")
+        self.watermark_test_open_folder.setVisible(False)
+        self.watermark_test_open_folder.clicked.connect(self._open_watermark_test_folder)
+        test_actions = QWidget()
+        test_actions_layout = QHBoxLayout(test_actions)
+        test_actions_layout.setContentsMargins(0, 0, 0, 0)
+        test_actions_layout.addWidget(self.watermark_test_button, stretch=1)
+        test_actions_layout.addWidget(self.watermark_test_open_folder)
+        form.addRow("", test_actions)
+
+        self.watermark_test_progress = QProgressBar()
+        self.watermark_test_progress.setRange(0, 0)
+        self.watermark_test_progress.setTextVisible(False)
+        self.watermark_test_progress.setVisible(False)
+        form.addRow("", self.watermark_test_progress)
+        self.watermark_test_status = QLabel("")
+        self.watermark_test_status.setObjectName("Muted")
+        form.addRow("", self.watermark_test_status)
 
         # -- Textos no vídeo ----------------------------------------------- #
         form.addRow(self._section("📝 Textos no vídeo"))
@@ -232,6 +285,9 @@ class StylePage(QWidget):
         ):
             line_edit.textChanged.connect(debounced)
         self.tts_text.textChanged.connect(debounced)
+        self.watermark_path.textChanged.connect(
+            lambda _t: self._refresh_watermark_test_enabled()
+        )
 
         for combo in (
             self.badge_position, self.anime_framing, self.watermark_position,
@@ -357,3 +413,93 @@ class StylePage(QWidget):
         s.tts_text = self.tts_text.toPlainText().strip()
         s.save()
         logger.info("Estilo salvo.")
+
+    # ------------------------------------------------------------------ #
+    # Testar marca d'água num vídeo (edição isolada, sem os outros itens
+    # do preset de Estilo — não passa pelo pipeline de cortes por IA).
+    # ------------------------------------------------------------------ #
+    def _set_watermark_test_source(self, source: str) -> None:
+        self._test_source = source
+        display = source if len(source) < 90 else source[:87] + "..."
+        self.watermark_test_source_label.setText(f"🎞 {display}")
+        self.watermark_test_open_folder.setVisible(False)
+        self._refresh_watermark_test_enabled()
+
+    def _refresh_watermark_test_enabled(self) -> None:
+        has_watermark = bool(
+            self.watermark_path.text().strip()
+            and Path(self.watermark_path.text().strip()).exists()
+        )
+        self.watermark_test_button.setEnabled(
+            has_watermark and self._test_source is not None and not self.is_running()
+        )
+
+    def _apply_watermark_test(self) -> None:
+        if self._test_source is None:
+            return
+        self.save()  # garante que o preset (inclusive a marca d'água) está salvo
+        s = self.settings
+        options = EditOptions(
+            watermark_path=s.watermark_path,
+            watermark_position=s.watermark_position,
+            watermark_size=s.watermark_size,
+            watermark_opacity=s.watermark_opacity,
+        )
+        C.EDITOR_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        stem = sanitize_filename(Path(self._test_source).stem)
+        output_path = C.EDITOR_OUTPUT_DIR / f"{stem}_marca_dagua.mp4"
+
+        self._test_worker = SimpleEditorWorker(
+            self._test_source, output_path, options, use_gpu=s.use_gpu,
+        )
+        self._test_worker.progressChanged.connect(self._on_watermark_test_progress)
+        self._test_worker.succeeded.connect(self._on_watermark_test_succeeded)
+        self._test_worker.failed.connect(self._on_watermark_test_failed)
+        self._test_worker.start()
+
+        self.watermark_test_button.setEnabled(False)
+        self.watermark_test_open_folder.setVisible(False)
+        self.watermark_test_progress.setVisible(True)
+        self.watermark_test_status.setText("Iniciando...")
+
+    def _on_watermark_test_progress(self, message: str) -> None:
+        self.watermark_test_status.setText(message)
+
+    def _on_watermark_test_succeeded(self, output_path: str) -> None:
+        self._test_last_output = output_path
+        self.watermark_test_progress.setVisible(False)
+        self.watermark_test_status.setText(f"Concluído: {output_path}")
+        self.watermark_test_open_folder.setVisible(True)
+        self._refresh_watermark_test_enabled()
+
+    def _on_watermark_test_failed(self, message: str) -> None:
+        self.watermark_test_progress.setVisible(False)
+        self.watermark_test_status.setText("Erro ao aplicar marca d'água.")
+        self._refresh_watermark_test_enabled()
+        QMessageBox.warning(self, "Erro ao aplicar marca d'água", message)
+
+    def _open_watermark_test_folder(self) -> None:
+        if not self._test_last_output:
+            return
+        folder = str(Path(self._test_last_output).parent)
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", folder])
+        else:
+            subprocess.Popen(["xdg-open", folder])
+
+    # ------------------------------------------------------------------ #
+    def is_running(self) -> bool:
+        """Indica se há uma edição de teste em andamento (usado ao fechar a janela)."""
+        return self._test_worker is not None and self._test_worker.isRunning()
+
+    def wait_running_worker(self, timeout_ms: int) -> bool:
+        """Aguarda o worker atual encerrar; True se terminou dentro do prazo."""
+        if self._test_worker is None:
+            return True
+        return self._test_worker.wait(timeout_ms)
+
+    def terminate_running_worker(self) -> None:
+        """Força o encerramento do worker (último recurso, ao fechar o app)."""
+        if self._test_worker is not None:
+            self._test_worker.terminate()
+            self._test_worker.wait(3000)

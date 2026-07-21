@@ -5,17 +5,20 @@ música/efeitos de fundo originais via separação por IA (Demucs).
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -70,6 +73,13 @@ class RedubPage(QWidget):
         subtitle.setWordWrap(True)
         root.addWidget(subtitle)
 
+        # Formulário + entrada de vídeo ficam num painel rolável: assim a
+        # janela pode ser reduzida na vertical sem cortar os campos.
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(14)
+
         form = QFormLayout()
         form.setSpacing(10)
 
@@ -79,6 +89,31 @@ class RedubPage(QWidget):
         for voice, label in C.TTS_VOICES.items():
             self.voice.addItem(label, userData=voice)
         form.addRow("Voz:", self.voice)
+
+        # -- Clonagem de voz (opcional) ------------------------------------ #
+        clone_row = QHBoxLayout()
+        self.voice_reference_input = QLineEdit()
+        self.voice_reference_input.setPlaceholderText(
+            "Nenhum (usa a voz pronta selecionada acima)"
+        )
+        self.voice_reference_input.setReadOnly(True)
+        clone_button = QPushButton("Selecionar áudio...")
+        clone_button.clicked.connect(self._pick_voice_reference)
+        clone_clear = QPushButton("✖")
+        clone_clear.setToolTip("Remover áudio de referência")
+        clone_clear.setFixedWidth(28)
+        clone_clear.clicked.connect(self._clear_voice_reference)
+        clone_row.addWidget(self.voice_reference_input, stretch=1)
+        clone_row.addWidget(clone_button)
+        clone_row.addWidget(clone_clear)
+        clone_label = QLabel("Clonar voz de um áudio:")
+        clone_label.setToolTip(
+            "Opcional: em vez de usar uma das vozes prontas acima, clona a "
+            "voz de um áudio de referência (10-30s de fala limpa, uma só "
+            "pessoa, sem música/ruído de fundo) — costuma soar bem mais "
+            "natural que os speakers prontos do XTTS."
+        )
+        form.addRow(clone_label, clone_row)
 
         # -- Música/efeitos de fundo -------------------------------------- #
         form.addRow(self._section("🎵 Música e efeitos de fundo"))
@@ -96,12 +131,12 @@ class RedubPage(QWidget):
         form.addRow("", self.keep_background)
         form.addRow("Volume:", self.background_volume)
 
-        root.addLayout(form)
+        content_layout.addLayout(form)
 
         # -- Entrada: drop area + campo de link ------------------------- #
         self.drop_area = DropArea()
         self.drop_area.fileSelected.connect(self.set_source)
-        root.addWidget(self.drop_area)
+        content_layout.addWidget(self.drop_area)
 
         url_row = QHBoxLayout()
         self.url_input = QLineEdit()
@@ -113,11 +148,16 @@ class RedubPage(QWidget):
         url_button.clicked.connect(self._use_url)
         url_row.addWidget(self.url_input, stretch=1)
         url_row.addWidget(url_button)
-        root.addLayout(url_row)
+        content_layout.addLayout(url_row)
 
         self.source_label = QLabel("Nenhum vídeo selecionado.")
         self.source_label.setObjectName("Muted")
-        root.addWidget(self.source_label)
+        content_layout.addWidget(self.source_label)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(content)
+        root.addWidget(scroll, stretch=1)
 
         # -- Ações ------------------------------------------------------- #
         actions = QHBoxLayout()
@@ -160,16 +200,34 @@ class RedubPage(QWidget):
         s = self.settings
         voice_index = self.voice.findData(s.redub_voice)
         self.voice.setCurrentIndex(max(voice_index, 0))
+        self.voice_reference_input.setText(s.redub_voice_reference)
         self.keep_background.setChecked(s.redub_keep_background)
         self.background_volume.setValue(s.redub_background_volume)
+
+    def save(self) -> None:
+        """Persiste as opções da Redublagem (usado pelo atalho Ctrl+S)."""
+        self._save_values()
 
     def _save_values(self) -> None:
         """Persiste as opções da Redublagem em Settings/config.json."""
         s = self.settings
         s.redub_voice = self.voice.currentData()
+        s.redub_voice_reference = self.voice_reference_input.text().strip()
         s.redub_keep_background = self.keep_background.isChecked()
         s.redub_background_volume = self.background_volume.value()
         s.save()
+
+    def _pick_voice_reference(self) -> None:
+        """Escolhe um áudio de referência pra clonagem de voz (XTTS)."""
+        exts = " ".join(f"*{ext}" for ext in C.SUPPORTED_AUDIO_EXTENSIONS)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Selecionar áudio de referência", "", f"Áudio ({exts})",
+        )
+        if path:
+            self.voice_reference_input.setText(str(Path(path)))
+
+    def _clear_voice_reference(self) -> None:
+        self.voice_reference_input.clear()
 
     # ------------------------------------------------------------------ #
     # API pública (usada pela MainWindow)

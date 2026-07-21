@@ -1,15 +1,18 @@
 """Separação de voz/instrumental via Demucs (dois stems: vocals / no_vocals).
 
-Usado pela Redublagem pra manter a música de fundo e os efeitos sonoros do
-vídeo original enquanto só a voz do narrador é substituída pela IA. O Demucs
-baixa o modelo pré-treinado (~80 MB) na primeira execução — precisa de
-internet nessa primeira vez, igual ao Whisper/XTTS. Uma falha aqui nunca
-derruba o pipeline: a Redublagem simplesmente segue sem música de fundo.
+Usado pela Redublagem tanto pra manter a música/efeitos originais quanto pra
+transcrever só a voz isolada (stem "vocals"), em vez do áudio completo —
+transcrever o áudio cru faz o Whisper "ouvir" fala em música/efeitos
+sonoros e tratar esse texto alucinado como se fosse narração, redublando
+coisa que não é o narrador. O Demucs baixa o modelo pré-treinado (~80 MB) na
+primeira execução — precisa de internet nessa primeira vez, igual ao
+Whisper/XTTS. Uma falha aqui nunca derruba o pipeline.
 """
 from __future__ import annotations
 
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from src.utils.logger import get_logger
@@ -19,6 +22,14 @@ logger = get_logger("vocal_separator")
 # No Windows, esconde a janela de console do subprocesso.
 _CREATION_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 _MODEL = "htdemucs"
+
+
+@dataclass
+class SeparatedAudio:
+    """Caminhos dos dois stems gerados pelo Demucs."""
+
+    vocals: Path
+    no_vocals: Path
 
 
 def _pick_device(use_gpu: bool) -> str:
@@ -32,12 +43,13 @@ def _pick_device(use_gpu: bool) -> str:
     return "cpu"
 
 
-def separate_background(
+def separate_vocals(
     audio_path: str | Path, workdir: str | Path, use_gpu: bool = True,
-) -> Path | None:
-    """Roda o Demucs e retorna o caminho do stem "no_vocals" (música +
-    efeitos, sem a voz). Retorna None se o Demucs não estiver disponível ou
-    falhar — nesse caso o chamador deve seguir sem música de fundo.
+) -> SeparatedAudio | None:
+    """Roda o Demucs e retorna os caminhos dos stems "vocals" (só voz) e
+    "no_vocals" (música + efeitos). Retorna None se o Demucs não estiver
+    disponível ou falhar — nesse caso o chamador deve seguir com o áudio
+    original sem separação.
     """
     device = _pick_device(use_gpu)
     out_dir = Path(workdir) / "demucs_out"
@@ -53,18 +65,20 @@ def separate_background(
             timeout=3600, creationflags=_CREATION_FLAGS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        logger.warning("Demucs indisponível (%s); seguindo sem música de fundo.", exc)
+        logger.warning("Demucs indisponível (%s); seguindo sem separação.", exc)
         return None
     if result.returncode != 0:
         logger.warning(
-            "Demucs falhou; seguindo sem música de fundo. %s", result.stderr[-500:],
+            "Demucs falhou; seguindo sem separação. %s", result.stderr[-500:],
         )
         return None
 
     stem = Path(audio_path).stem
-    no_vocals = out_dir / _MODEL / stem / "no_vocals.wav"
-    if not no_vocals.exists():
-        logger.warning("Demucs não gerou 'no_vocals.wav'; seguindo sem música de fundo.")
+    stem_dir = out_dir / _MODEL / stem
+    vocals = stem_dir / "vocals.wav"
+    no_vocals = stem_dir / "no_vocals.wav"
+    if not vocals.exists() or not no_vocals.exists():
+        logger.warning("Demucs não gerou os stems esperados; seguindo sem separação.")
         return None
-    logger.info("Música/efeitos de fundo separados: %s", no_vocals)
-    return no_vocals
+    logger.info("Voz e música/efeitos separados: %s / %s", vocals, no_vocals)
+    return SeparatedAudio(vocals=vocals, no_vocals=no_vocals)

@@ -14,7 +14,7 @@ from typing import Callable
 from src.ai.transcriber import WhisperTranscriber
 from src.audio.extractor import extract_audio_hq
 from src.audio.redub_builder import build_narration_track, mux_final_audio
-from src.audio.vocal_separator import separate_background
+from src.audio.vocal_separator import separate_vocals
 from src.config.settings import Settings
 from src.core.exceptions import AutoShortsError
 from src.core.task_manager import TaskControl
@@ -60,26 +60,38 @@ class RedubPipeline:
         audio_path = extract_audio_hq(video_path, temp_dir)
         control.checkpoint()
 
-        cb.on_progress(18, "Transcrevendo a narração original com Whisper...")
+        # Separa a voz (Demucs) ANTES de transcrever: transcrever o áudio
+        # cru faz o Whisper "ouvir" fala em música/efeitos sonoros e tratar
+        # esse texto alucinado como narração. Transcrevendo só o stem
+        # "vocals" (e depois filtrando por confiança abaixo), a Redublagem
+        # troca só o que é voz de verdade, não o áudio do vídeo inteiro.
+        cb.on_progress(25, "Separando a voz do resto do áudio (pode demorar)...")
+        separated = separate_vocals(audio_path, temp_dir, use_gpu=s.use_gpu)
+        vocals_path = separated.vocals if separated else audio_path
+        background_path = separated.no_vocals if (separated and s.redub_keep_background) else None
+        control.checkpoint()
+
+        cb.on_progress(35, "Transcrevendo a narração original com Whisper...")
         transcriber = WhisperTranscriber(s.whisper_model, s.use_gpu)
         transcription = transcriber.transcribe(
-            audio_path, s.language, progress=lambda m: cb.on_progress(25, m),
+            vocals_path, s.language, progress=lambda m: cb.on_progress(40, m),
         )
-        if not transcription.segments:
+        segments = [seg for seg in transcription.segments if seg.is_confident_speech]
+        dropped = len(transcription.segments) - len(segments)
+        if dropped:
+            logger.info(
+                "%d trecho(s) descartado(s) por baixa confiança de fala "
+                "(provável ruído/efeito/música, não narração).", dropped,
+            )
+        if not segments:
             raise AutoShortsError(
                 "Não foi possível identificar falas nesse vídeo."
             )
         control.checkpoint()
 
-        background_path = None
-        if s.redub_keep_background:
-            cb.on_progress(40, "Separando música/efeitos de fundo (pode demorar)...")
-            background_path = separate_background(audio_path, temp_dir, use_gpu=s.use_gpu)
-        control.checkpoint()
-
         cb.on_progress(60, "Gerando a nova narração por IA (sincronizada por trecho)...")
         narration_track = build_narration_track(
-            transcription.segments, s.redub_voice, temp_dir,
+            segments, s.redub_voice, temp_dir, voice_reference=s.redub_voice_reference or None,
         )
         control.checkpoint()
 

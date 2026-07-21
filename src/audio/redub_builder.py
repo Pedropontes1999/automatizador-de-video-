@@ -31,10 +31,11 @@ def _silence_clip(duration: float, output: Path) -> Path:
 
 def _segment_clip(
     text: str, voice: str, target_duration: float, workdir: Path, tag: str,
+    voice_reference: str | None = None,
 ) -> tuple[Path, float] | None:
     """Sintetiza a fala do trecho e ajusta a velocidade pra caber (aprox.)
     no tempo original. Retorna (caminho, duração real após o ajuste)."""
-    raw = synthesize(text, voice, workdir / f"{tag}_raw.mp3")
+    raw = synthesize(text, voice, workdir / f"{tag}_raw.mp3", voice_reference=voice_reference)
     if raw is None:
         return None
     raw_duration = audio_duration(raw)
@@ -52,6 +53,7 @@ def _segment_clip(
 
 def build_narration_track(
     segments: list[TranscriptSegment], voice: str, workdir: Path,
+    voice_reference: str | None = None,
 ) -> Path:
     """Gera uma trilha de narração de IA contínua, sincronizada por trecho.
 
@@ -71,7 +73,10 @@ def build_narration_track(
         if gap > 0.02:
             pieces.append(_silence_clip(gap, workdir / f"gap_{i:04d}.wav"))
             cursor += gap
-        result = _segment_clip(text, voice, seg.duration, workdir, f"seg_{i:04d}")
+        result = _segment_clip(
+            text, voice, seg.duration, workdir, f"seg_{i:04d}",
+            voice_reference=voice_reference,
+        )
         if result is None:
             logger.warning("Narração do trecho %d falhou; seguindo sem ele.", i)
             continue

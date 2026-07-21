@@ -21,13 +21,17 @@ from src.config.constants import SUPPORTED_VIDEO_EXTENSIONS
 from src.config.settings import Settings
 from src.database.db import init_database
 from src.gui.pages.dashboard_page import DashboardPage
+from src.gui.pages.download_page import DownloadPage
 from src.gui.pages.editor_page import EditorPage
+from src.gui.pages.editor_redub_page import EditorRedubPage
 from src.gui.pages.history_page import HistoryPage
 from src.gui.pages.home_page import HomePage
 from src.gui.pages.redub_page import RedubPage
 from src.gui.pages.settings_page import SettingsPage
 from src.gui.pages.simple_editor_page import SimpleEditorPage
 from src.gui.pages.style_page import StylePage
+from src.gui.pages.trim_page import TrimPage
+from src.gui.pages.watermark_page import WatermarkPage
 from src.gui.theme import build_stylesheet
 from src.gui.widgets.sidebar import Sidebar
 from src.services.project_service import ProjectService
@@ -37,6 +41,25 @@ from src.workers.redub_worker import RedubWorker
 from src.workers.video_editor_worker import VideoEditorWorker
 
 logger = get_logger("main_window")
+
+
+class _CurrentPageStack(QStackedWidget):
+    """QStackedWidget cujo tamanho mínimo segue só a página visível.
+
+    Por padrão o Qt calcula o minimumSizeHint como o maior entre TODAS as
+    páginas já adicionadas (mesmo as escondidas), então uma página alta
+    como o Editor de Vídeo travava a altura mínima da janela mesmo com a
+    Home (menor) selecionada. Sobrescrevendo aqui, cada página passa a
+    controlar sua própria altura mínima.
+    """
+
+    def sizeHint(self):  # noqa: N802 (Qt API)
+        current = self.currentWidget()
+        return current.sizeHint() if current is not None else super().sizeHint()
+
+    def minimumSizeHint(self):  # noqa: N802 (Qt API)
+        current = self.currentWidget()
+        return current.minimumSizeHint() if current is not None else super().minimumSizeHint()
 
 
 class MainWindow(QWidget):
@@ -68,23 +91,30 @@ class MainWindow(QWidget):
         self.sidebar = Sidebar()
         root.addWidget(self.sidebar)
 
-        self.pages = QStackedWidget()
+        self.pages = _CurrentPageStack()
+        self.pages.currentChanged.connect(lambda _i: self.pages.updateGeometry())
         self.home = HomePage()
+        self.download_page = DownloadPage()
         self.editor = EditorPage(self.settings)
         self.redub = RedubPage(self.settings)
+        self.editor_redub_page = EditorRedubPage(self.editor, self.redub)
         self.dashboard = DashboardPage()
         self.history = HistoryPage()
         self.simple_editor_page = SimpleEditorPage(self.settings)
+        self.trim_page = TrimPage(self.settings)
+        self.watermark_page = WatermarkPage(self.settings)
         self.style_page = StylePage(self.settings)
         self.settings_page = SettingsPage(self.settings)
-        for page in (self.home, self.editor, self.redub, self.dashboard,
-                     self.history, self.simple_editor_page, self.style_page,
+        for page in (self.home, self.download_page, self.editor_redub_page,
+                     self.dashboard, self.history, self.simple_editor_page,
+                     self.trim_page, self.watermark_page, self.style_page,
                      self.settings_page):
             self.pages.addWidget(page)
         root.addWidget(self.pages, stretch=1)
 
         # Navegação
         self.sidebar.pageSelected.connect(self.pages.setCurrentIndex)
+        self.download_page.openInEditor.connect(self._open_in_simple_editor)
 
         # Tipo de vídeo: restaura do config e persiste mudanças
         self.home.set_category(self.settings.video_category)
@@ -129,14 +159,26 @@ class MainWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+Return"), self, activated=self.home.request_analyze)
 
     def _save_current_page(self) -> None:
-        """Ctrl+S: salva a página aberta (Editor, Estilo ou Configurações)."""
+        """Ctrl+S: salva a página aberta (Editor/Redublagem, Estilo ou
+        Configurações). Na aba combinada Editor/Redublagem, salva a sub-aba
+        que estiver visível no momento."""
         current = self.pages.currentWidget()
-        if current is self.editor_page:
-            self.editor_page.save()
+        if current is self.editor_redub_page:
+            active = self.editor_redub_page.tabs.currentWidget()
+            if active is self.editor:
+                self.editor.save()
+            elif active is self.redub:
+                self.redub.save()
         elif current is self.style_page:
             self.style_page.save()
         else:
             self.settings_page.save()
+
+    def _open_in_simple_editor(self, video_path: str) -> None:
+        """Manda um vídeo baixado direto pro Editor Simples, já selecionado."""
+        self.simple_editor_page.set_source(video_path)
+        self.pages.setCurrentIndex(self.pages.indexOf(self.simple_editor_page))
+        self.sidebar.set_current_index(self.pages.indexOf(self.simple_editor_page))
 
     def _on_category_changed(self, category: str) -> None:
         """Persiste o tipo de vídeo escolhido na Home."""
@@ -416,4 +458,52 @@ class MainWindow(QWidget):
             if not self.simple_editor_page.wait_running_worker(8000):
                 logger.warning("Edição não respondeu ao fechar; terminando.")
                 self.simple_editor_page.terminate_running_worker()
+
+        if self.trim_page.is_running():
+            answer = QMessageBox.question(
+                self, "Sair",
+                "Há um corte de vídeo em andamento. Cancelar e sair?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+            if not self.trim_page.wait_running_worker(8000):
+                logger.warning("Corte não respondeu ao fechar; terminando.")
+                self.trim_page.terminate_running_worker()
+
+        if self.watermark_page.is_running():
+            answer = QMessageBox.question(
+                self, "Sair",
+                "Há uma remoção de marca d'água em andamento. Cancelar e sair?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+            if not self.watermark_page.wait_running_worker(8000):
+                logger.warning("Remoção não respondeu ao fechar; terminando.")
+                self.watermark_page.terminate_running_worker()
+
+        if self.download_page.is_running():
+            answer = QMessageBox.question(
+                self, "Sair",
+                "Há um download em andamento. Cancelar e sair?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+            if not self.download_page.wait_running_worker(8000):
+                logger.warning("Download não respondeu ao fechar; terminando.")
+                self.download_page.terminate_running_worker()
+
+        if self.style_page.is_running():
+            answer = QMessageBox.question(
+                self, "Sair",
+                "Há um teste de marca d'água em andamento. Cancelar e sair?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+            if not self.style_page.wait_running_worker(8000):
+                logger.warning("Teste de marca d'água não respondeu ao fechar; terminando.")
+                self.style_page.terminate_running_worker()
         event.accept()

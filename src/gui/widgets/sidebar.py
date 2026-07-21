@@ -13,11 +13,13 @@ class Sidebar(QWidget):
     #: (ícone emoji, rótulo) na ordem das páginas do QStackedWidget.
     ITEMS: tuple[tuple[str, str], ...] = (
         ("🎬", "Início"),
-        ("🎞️", "Editor"),
-        ("🗣️", "Redublagem"),
+        ("⬇️", "Download"),
+        ("🎞️", "Editor / Redublagem"),
         ("📊", "Dashboard"),
         ("🕘", "Histórico"),
         ("🖊️", "Editor Simples"),
+        ("✂️", "Cortar Vídeo"),
+        ("🧹", "Remover Marca d'Água"),
         ("🎨", "Estilo"),
         ("⚙️", "Configurações"),
     )
@@ -49,3 +51,10 @@ class Sidebar(QWidget):
         version = QLabel("v1.0.0 • 100% local")
         version.setObjectName("Muted")
         layout.addWidget(version)
+
+    def set_current_index(self, index: int) -> None:
+        """Marca o botão correspondente como selecionado (navegação vinda de
+        fora da sidebar, ex.: botão "Editar no Editor Simples" da Download)."""
+        button = self._group.button(index)
+        if button is not None:
+            button.setChecked(True)

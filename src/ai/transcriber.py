@@ -93,6 +93,9 @@ class WhisperTranscriber:
                     start=float(seg["start"]),
                     end=float(seg["end"]),
                     words=words,
+                    no_speech_prob=float(seg.get("no_speech_prob", 0.0)),
+                    avg_logprob=float(seg.get("avg_logprob", 0.0)),
+                    compression_ratio=float(seg.get("compression_ratio", 0.0)),
                 )
             )
 

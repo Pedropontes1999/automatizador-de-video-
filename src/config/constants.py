@@ -27,9 +27,16 @@ PLUGINS_DIR: Path = SRC_DIR / "plugins"
 # Vídeos editados na aba Editor (marca d'água / narração, sem corte por IA).
 EDITOR_OUTPUT_DIR: Path = OUTPUT_DIR / "editados"
 
+# Vídeos com trechos removidos manualmente na aba Cortar Vídeo.
+TRIM_OUTPUT_DIR: Path = OUTPUT_DIR / "cortados"
+
+# Vídeos com marca d'água removida na aba Remover Marca d'Água.
+WATERMARK_OUTPUT_DIR: Path = OUTPUT_DIR / "sem_marca"
+
 REQUIRED_FOLDERS: tuple[Path, ...] = (
     LOGS_DIR, TEMP_DIR, CACHE_DIR, OUTPUT_DIR, DOWNLOADS_DIR,
-    ASSETS_DIR, FONTS_DIR, ICONS_DIR, EDITOR_OUTPUT_DIR,
+    ASSETS_DIR, FONTS_DIR, ICONS_DIR, EDITOR_OUTPUT_DIR, TRIM_OUTPUT_DIR,
+    WATERMARK_OUTPUT_DIR,
 )
 
 # ---------------------------------------------------------------------------
