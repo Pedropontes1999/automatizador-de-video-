@@ -8,7 +8,7 @@ from pathlib import Path
 from src.audio.tts import audio_duration, synthesize
 from src.core.exceptions import AutoShortsError
 from src.models.domain import TranscriptSegment
-from src.utils.ffmpeg_utils import run_ffmpeg
+from src.utils.ffmpeg_utils import gpu_encoder_args, run_ffmpeg
 from src.utils.logger import get_logger
 from src.video.intro_builder import concat_same_encoding
 
@@ -90,9 +90,16 @@ def mux_final_audio(
     output: str | Path,
     duration: float,
     background_volume: int = 70,
+    use_gpu: bool = True,
+    crf: int = 20,
 ) -> Path:
     """Troca a trilha de áudio do vídeo original pela narração de IA (+
-    música/efeitos de fundo opcionais), sem reencodar o vídeo (`-c:v copy`).
+    música/efeitos de fundo opcionais).
+
+    O vídeo é sempre reencodado para H.264 (GPU quando disponível, senão
+    CPU) em vez de copiado (`-c:v copy`): o vídeo de origem pode vir em
+    AV1/VP9 (comum em downloads do YouTube), formatos que muitos players e
+    editores não reproduzem — H.264 é o mais compatível.
     """
     output = Path(output)
     inputs = ["-i", str(video_path), "-i", str(narration_track)]
@@ -106,14 +113,19 @@ def mux_final_audio(
         )
     else:
         audio_graph = f"[1:a]apad,atrim=0:{duration:.3f},asetpts=N/SR/TB[aout]"
+    gpu_args = use_gpu and gpu_encoder_args(crf)
+    video_args = gpu_args or ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf)]
     run_ffmpeg([
         *inputs,
         "-filter_complex", audio_graph,
         "-map", "0:v", "-map", "[aout]",
-        "-c:v", "copy",
+        *video_args,
+        "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-movflags", "+faststart",
         str(output),
     ], timeout=3600)
-    logger.info("Vídeo redublado exportado: %s", output)
+    logger.info(
+        "Vídeo redublado exportado (%s): %s", "GPU" if gpu_args else "CPU", output,
+    )
     return output

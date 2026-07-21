@@ -78,7 +78,15 @@ def download_video(url: str, progress: ProgressFn | None = None) -> Path:
             progress(100.0, "Download concluído. Processando...")
 
     options = {
-        "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        # vcodec^=avc1 força H.264: o YouTube também serve MP4 em AV1, que
+        # muitos players/editores não decodificam — e a Redublagem copia o
+        # vídeo sem reencodar (-c:v copy), então um AV1 baixado aqui vai
+        # direto pro arquivo final. H.264 é o formato mais compatível.
+        "format": (
+            "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]"
+            "/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]"
+            "/best[ext=mp4]/best"
+        ),
         "outtmpl": str(DOWNLOADS_DIR / "%(title).80s [%(id)s].%(ext)s"),
         "merge_output_format": "mp4",
         "noplaylist": True,

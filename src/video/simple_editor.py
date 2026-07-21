@@ -62,7 +62,7 @@ def edit_video(
         output_path: MP4 final.
         options: marca d'água + narração desejadas.
         workdir: pasta temporária para o áudio da narração.
-        use_gpu: tenta usar h264_nvenc quando disponível.
+        use_gpu: tenta usar um encoder de GPU (NVENC/AMF) quando disponível.
         on_progress: callback opcional para mensagens de status.
     """
     source = Path(source)
@@ -91,11 +91,8 @@ def edit_video(
             notify("Narração indisponível; seguindo sem ela.")
 
     notify("Renderizando vídeo editado...")
-    gpu = use_gpu and ffmpeg_utils.has_nvenc()
-    encoder_args = (
-        ["-c:v", "h264_nvenc", "-preset", "p5", "-cq", "20"] if gpu
-        else ["-c:v", "libx264", "-preset", "medium", "-crf", "20"]
-    )
+    gpu_args = use_gpu and ffmpeg_utils.gpu_encoder_args(20)
+    encoder_args = gpu_args or ["-c:v", "libx264", "-preset", "medium", "-crf", "20"]
     ffmpeg_utils.run_ffmpeg([
         "-i", str(source),
         "-filter_complex", graph,
@@ -108,7 +105,7 @@ def edit_video(
     ], timeout=7200)
     notify("Edição concluída.")
     logger.info(
-        "Vídeo editado exportado (%s): %s", "GPU" if gpu else "CPU", output_path,
+        "Vídeo editado exportado (%s): %s", "GPU" if gpu_args else "CPU", output_path,
     )
     return output_path
 

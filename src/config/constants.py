@@ -27,9 +27,12 @@ PLUGINS_DIR: Path = SRC_DIR / "plugins"
 # Vídeos editados na aba Editor (marca d'água / narração, sem corte por IA).
 EDITOR_OUTPUT_DIR: Path = OUTPUT_DIR / "editados"
 
+# Modelos de voz do Piper (narração), baixados sob demanda na 1ª vez.
+PIPER_VOICES_DIR: Path = CACHE_DIR / "piper_voices"
+
 REQUIRED_FOLDERS: tuple[Path, ...] = (
     LOGS_DIR, TEMP_DIR, CACHE_DIR, OUTPUT_DIR, DOWNLOADS_DIR,
-    ASSETS_DIR, FONTS_DIR, ICONS_DIR, EDITOR_OUTPUT_DIR,
+    ASSETS_DIR, FONTS_DIR, ICONS_DIR, EDITOR_OUTPUT_DIR, PIPER_VOICES_DIR,
 )
 
 # ---------------------------------------------------------------------------
@@ -113,16 +116,21 @@ SUPPORTED_AUDIO_EXTENSIONS: tuple[str, ...] = (
 )
 
 # ---------------------------------------------------------------------------
-# Narração (TTS via edge-tts — vozes Microsoft, requer internet)
+# Narração (TTS via Piper — vozes locais, offline)
 # ---------------------------------------------------------------------------
+# Vozes Piper (ONNX, local e offline — trocado de edge-tts em 2026-07: sem
+# depender de rede, sem risco de travar o pipeline num timeout de servidor,
+# e ~100x mais rápido que edge-tts por trecho — viável até em vídeos com
+# milhares de trechos, como a Redublagem). Não há voz feminina pt-BR no
+# catálogo oficial do Piper no momento.
 TTS_VOICES: dict[str, str] = {
-    "pt-BR-AntonioNeural": "Antonio (PT-BR, masculina)",
-    "pt-BR-FranciscaNeural": "Francisca (PT-BR, feminina)",
-    "pt-BR-ThalitaNeural": "Thalita (PT-BR, feminina)",
-    "en-US-GuyNeural": "Guy (EN-US, masculina)",
-    "en-US-AriaNeural": "Aria (EN-US, feminina)",
+    "pt_BR-faber-medium": "Faber (PT-BR, masculina)",
+    "pt_BR-cadu-medium": "Cadu (PT-BR, masculina)",
+    "pt_BR-jeff-medium": "Jeff (PT-BR, masculina)",
+    "en_US-lessac-medium": "Lessac (EN-US, masculina)",
+    "en_US-amy-medium": "Amy (EN-US, feminina)",
 }
-TTS_DEFAULT_VOICE: str = "pt-BR-AntonioNeural"
+TTS_DEFAULT_VOICE: str = "pt_BR-faber-medium"
 
 # ---------------------------------------------------------------------------
 # Legendas

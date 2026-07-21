@@ -11,15 +11,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.utils.ffmpeg_utils import has_nvenc, run_ffmpeg
+from src.utils.ffmpeg_utils import gpu_encoder_args, run_ffmpeg
 from src.utils.logger import get_logger
 
 logger = get_logger("intro_builder")
 
 
 def _encoder_args(use_gpu: bool, crf: int) -> list[str]:
-    if use_gpu and has_nvenc():
-        return ["-c:v", "h264_nvenc", "-preset", "p5", "-cq", str(crf)]
+    if use_gpu:
+        gpu_args = gpu_encoder_args(crf)
+        if gpu_args is not None:
+            return gpu_args
     return ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf)]
 
 

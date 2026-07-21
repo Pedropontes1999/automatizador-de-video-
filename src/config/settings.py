@@ -86,7 +86,7 @@ class Settings:
     channel_avatar_path: str = ""                # foto do canal
     channel_badge_position: str = "bottom"       # top | bottom
 
-    # --- Narração por IA (edge-tts, requer internet) ----------------------
+    # --- Narração por IA (Piper, local/offline) ----------------------------
     tts_enabled: bool = False
     tts_text: str = ""                           # texto narrado no início do short
     tts_voice: str = C.TTS_DEFAULT_VOICE

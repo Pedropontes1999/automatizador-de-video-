@@ -2,7 +2,7 @@
 
 Etapas:
 1. (opcional) Download do YouTube (yt-dlp)
-2. Narração por IA no início (edge-tts) — opcional
+2. Narração por IA no início (Piper) — opcional
 3. Transição de estática de TV — opcional
 4. Concatena a abertura (narração + estática) com o vídeo original e exporta
    um único MP4, preservando o formato/resolução de origem.
@@ -78,7 +78,7 @@ class VideoEditPipeline:
         clips: list[Path] = []
 
         if s.editor_narration_enabled and s.editor_narration_text.strip():
-            cb.on_progress(15, "Gerando narração com IA (Microsoft)...")
+            cb.on_progress(15, "Gerando narração com IA...")
             narration_audio = synthesize(
                 s.editor_narration_text, s.editor_narration_voice,
                 temp_dir / "narracao.mp3",

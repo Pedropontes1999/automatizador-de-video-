@@ -6,13 +6,13 @@ Fluxo em duas etapas para máxima precisão:
 2. `export_short` — aplica no trecho: remoção de silêncios, reframe 9:16,
    efeitos, legendas queimadas e a cadeia de áudio, gerando o MP4 final.
 
-Usa GPU (h264_nvenc) automaticamente quando disponível.
+Usa GPU (NVENC/NVIDIA ou AMF/AMD) automaticamente quando disponível.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from src.utils.ffmpeg_utils import has_nvenc, run_ffmpeg
+from src.utils.ffmpeg_utils import gpu_encoder_args, run_ffmpeg
 from src.utils.logger import get_logger
 
 logger = get_logger("exporter")
@@ -97,14 +97,11 @@ def export_short(
         filter_complex: grafo montado por `build_filter_complex`.
         fps: quadros por segundo da saída.
         crf: qualidade x264 (menor = melhor).
-        use_gpu: tenta usar h264_nvenc quando disponível.
+        use_gpu: tenta usar um encoder de GPU (NVENC/AMF) quando disponível.
     """
     output_path = Path(output_path)
-    gpu = use_gpu and has_nvenc()
-    if gpu:
-        encoder_args = ["-c:v", "h264_nvenc", "-preset", "p5", "-cq", str(crf)]
-    else:
-        encoder_args = ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf)]
+    gpu_args = use_gpu and gpu_encoder_args(crf)
+    encoder_args = gpu_args or ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf)]
 
     run_ffmpeg([
         "-i", str(segment_path),
@@ -117,5 +114,5 @@ def export_short(
         "-movflags", "+faststart",
         str(output_path),
     ], timeout=1800)
-    logger.info("Short exportado (%s): %s", "GPU" if gpu else "CPU", output_path)
+    logger.info("Short exportado (%s): %s", "GPU" if gpu_args else "CPU", output_path)
     return output_path

@@ -19,8 +19,8 @@ yt-dlp>=2024.5.27
 # Comunicação com Ollama (API local HTTP)
 requests>=2.32.0
 
-# Narração por IA (vozes Microsoft - requer internet)
-edge-tts>=6.1.0
+# Narração por IA (vozes Piper, local/offline - baixa cada voz na 1a vez)
+piper-tts>=1.5.0
 
 # Separação de voz/música (Redublagem) - baixa modelo pré-treinado na 1a execução
 demucs>=4.1.0

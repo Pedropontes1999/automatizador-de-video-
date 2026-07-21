@@ -3,7 +3,7 @@
 Usado pela Redublagem pra manter a música de fundo e os efeitos sonoros do
 vídeo original enquanto só a voz do narrador é substituída pela IA. O Demucs
 baixa o modelo pré-treinado (~80 MB) na primeira execução — precisa de
-internet nessa primeira vez, igual ao Whisper/edge-tts. Uma falha aqui nunca
+internet nessa primeira vez, igual ao Whisper/Piper. Uma falha aqui nunca
 derruba o pipeline: a Redublagem simplesmente segue sem música de fundo.
 """
 from __future__ import annotations

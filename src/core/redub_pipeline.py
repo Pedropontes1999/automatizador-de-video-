@@ -89,6 +89,7 @@ class RedubPipeline:
         mux_final_audio(
             video_path, narration_track, background_path, output_path,
             duration=info["duration"], background_volume=s.redub_background_volume,
+            use_gpu=s.use_gpu, crf=s.quality_crf,
         )
 
         cb.on_progress(100, f"Concluído! Vídeo redublado salvo em {output_path}")

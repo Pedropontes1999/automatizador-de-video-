@@ -125,34 +125,66 @@ def video_info(video_path: str | Path) -> dict:
 
 
 _nvenc_available: bool | None = None  # cache do teste funcional
+_amf_available: bool | None = None    # cache do teste funcional
 
 
-def has_nvenc() -> bool:
-    """Verifica se o encoder NVIDIA h264_nvenc realmente FUNCIONA.
+def _encoder_works(codec: str) -> bool:
+    """Testa se um encoder de vídeo realmente FUNCIONA (não só se está listado).
 
-    Listar encoders não basta: o FFmpeg pode ter o nvenc compilado mesmo em
-    máquinas sem GPU NVIDIA (falharia com 'Could not open encoder'). Por isso
-    é feito um teste real codificando alguns frames sintéticos (resultado é
-    cacheado no processo).
+    Listar encoders não basta: o FFmpeg pode ter nvenc/amf compilados mesmo em
+    máquinas sem a GPU correspondente (falharia com 'Could not open encoder').
+    Por isso é feito um teste real codificando alguns frames sintéticos.
     """
-    global _nvenc_available
-    if _nvenc_available is not None:
-        return _nvenc_available
     try:
         result = subprocess.run(
             [
                 find_binary("ffmpeg"), "-hide_banner", "-v", "error",
                 "-f", "lavfi", "-i", "nullsrc=s=256x256:r=10:d=0.3",
-                "-frames:v", "3", "-c:v", "h264_nvenc", "-f", "null", "-",
+                "-frames:v", "3", "-c:v", codec, "-f", "null", "-",
             ],
             capture_output=True, text=True, timeout=30,
             creationflags=_CREATION_FLAGS,
         )
-        _nvenc_available = result.returncode == 0
+        return result.returncode == 0
     except (FFmpegError, OSError, subprocess.TimeoutExpired):
-        _nvenc_available = False
-    logger.info(
-        "Encoder de GPU (h264_nvenc): %s",
-        "disponível" if _nvenc_available else "indisponível — usando CPU (libx264)",
-    )
+        return False
+
+
+def has_nvenc() -> bool:
+    """Verifica (com cache) se o encoder NVIDIA h264_nvenc funciona."""
+    global _nvenc_available
+    if _nvenc_available is None:
+        _nvenc_available = _encoder_works("h264_nvenc")
+        logger.info(
+            "Encoder de GPU (h264_nvenc): %s",
+            "disponível" if _nvenc_available else "indisponível",
+        )
     return _nvenc_available
+
+
+def has_amf() -> bool:
+    """Verifica (com cache) se o encoder AMD h264_amf funciona."""
+    global _amf_available
+    if _amf_available is None:
+        _amf_available = _encoder_works("h264_amf")
+        logger.info(
+            "Encoder de GPU (h264_amf): %s",
+            "disponível" if _amf_available else "indisponível",
+        )
+    return _amf_available
+
+
+def gpu_encoder_args(crf: int | str) -> list[str] | None:
+    """Argumentos de encoder por GPU (NVIDIA ou AMD), ou None se nenhuma tiver.
+
+    Tenta NVENC (NVIDIA) primeiro, depois AMF (AMD); quando nenhum dos dois
+    funciona, o chamador deve cair para libx264 (CPU).
+    """
+    if has_nvenc():
+        return ["-c:v", "h264_nvenc", "-preset", "p5", "-cq", str(crf)]
+    if has_amf():
+        return [
+            "-c:v", "h264_amf", "-quality", "balanced",
+            "-rc", "cqp", "-qp_i", str(crf), "-qp_p", str(crf),
+        ]
+    return None

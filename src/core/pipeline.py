@@ -221,7 +221,7 @@ class ShortsPipeline:
         tts_path: Path | None = None
         tts_seconds = 0.0
         if self.settings.tts_enabled and self.settings.tts_text.strip():
-            cb.on_progress(48, "Gerando narração com IA (Microsoft)...")
+            cb.on_progress(48, "Gerando narração com IA...")
             tts_path = synthesize(
                 self.settings.tts_text, self.settings.tts_voice,
                 temp_dir / "narracao.mp3",
