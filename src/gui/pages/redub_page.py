@@ -1,21 +1,32 @@
 """Página Redublagem: troca a voz do narrador de um vídeo já pronto por uma
 narração de IA sincronizada por trecho, mantendo (opcionalmente) a
 música/efeitos de fundo originais via separação por IA (Demucs).
+
+Fluxo em duas etapas — o objetivo não é só trocar o timbre da voz, é permitir
+reescrever a narração com outras palavras antes de gerar a voz nova:
+
+1. "Transcrever": a IA separa a voz, transcreve e mostra o texto original,
+   um trecho por linha.
+2. O usuário reescreve o texto (linha por linha; pode copiar/colar num
+   ChatGPT/Claude e pedir pra reescrever "sem copiar as frases originais").
+3. "Gerar vídeo": a IA sintetiza a narração nova em cima do texto revisado,
+   sincronizada por trecho com o tempo original, e substitui a voz no vídeo.
 """
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 from PySide6.QtCore import QTimer, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -34,7 +45,8 @@ from src.video.downloader import is_youtube_url
 class RedubPage(QWidget):
     """Tela da Redublagem por IA."""
 
-    processRequested = Signal(str)   # caminho do arquivo ou URL
+    transcribeRequested = Signal(str)   # caminho do arquivo ou URL (etapa 1)
+    generateRequested = Signal(object)  # list[str], uma linha por trecho (etapa 2)
     pauseRequested = Signal()
     resumeRequested = Signal()
     cancelRequested = Signal()
@@ -43,6 +55,7 @@ class RedubPage(QWidget):
         super().__init__()
         self.settings = settings
         self._source: str | None = None
+        self._segment_count = 0
         self._paused = False
         self._started_at: float | None = None
         self._base_status = "Pronto."
@@ -90,31 +103,6 @@ class RedubPage(QWidget):
             self.voice.addItem(label, userData=voice)
         form.addRow("Voz:", self.voice)
 
-        # -- Clonagem de voz (opcional) ------------------------------------ #
-        clone_row = QHBoxLayout()
-        self.voice_reference_input = QLineEdit()
-        self.voice_reference_input.setPlaceholderText(
-            "Nenhum (usa a voz pronta selecionada acima)"
-        )
-        self.voice_reference_input.setReadOnly(True)
-        clone_button = QPushButton("Selecionar áudio...")
-        clone_button.clicked.connect(self._pick_voice_reference)
-        clone_clear = QPushButton("✖")
-        clone_clear.setToolTip("Remover áudio de referência")
-        clone_clear.setFixedWidth(28)
-        clone_clear.clicked.connect(self._clear_voice_reference)
-        clone_row.addWidget(self.voice_reference_input, stretch=1)
-        clone_row.addWidget(clone_button)
-        clone_row.addWidget(clone_clear)
-        clone_label = QLabel("Clonar voz de um áudio:")
-        clone_label.setToolTip(
-            "Opcional: em vez de usar uma das vozes prontas acima, clona a "
-            "voz de um áudio de referência (10-30s de fala limpa, uma só "
-            "pessoa, sem música/ruído de fundo) — costuma soar bem mais "
-            "natural que os speakers prontos do XTTS."
-        )
-        form.addRow(clone_label, clone_row)
-
         # -- Música/efeitos de fundo -------------------------------------- #
         form.addRow(self._section("🎵 Música e efeitos de fundo"))
         self.keep_background = QCheckBox(
@@ -154,6 +142,39 @@ class RedubPage(QWidget):
         self.source_label.setObjectName("Muted")
         content_layout.addWidget(self.source_label)
 
+        # -- Revisão do texto (aparece depois da etapa 1) ----------------- #
+        self.review_container = QWidget()
+        review_layout = QVBoxLayout(self.review_container)
+        review_layout.setContentsMargins(0, 0, 0, 0)
+        review_layout.setSpacing(8)
+        review_layout.addWidget(self._section("✏️ Revise a narração antes de gerar a nova voz"))
+        review_subtitle = QLabel(
+            "Reescreva o texto abaixo com outras palavras (pode copiar tudo, "
+            "colar num ChatGPT/Claude e pedir pra reescrever sem copiar as "
+            "frases originais, e colar o resultado de volta aqui). Cada "
+            "linha é um trecho sincronizado com o tempo original do vídeo "
+            "— não apague nem quebre linhas, só reescreva o conteúdo de "
+            "cada uma."
+        )
+        review_subtitle.setObjectName("Muted")
+        review_subtitle.setWordWrap(True)
+        review_layout.addWidget(review_subtitle)
+        self.text_edit = QPlainTextEdit()
+        self.text_edit.setMinimumHeight(220)
+        self.text_edit.setPlaceholderText("O texto transcrito aparece aqui após a etapa 1...")
+        self.text_edit.textChanged.connect(self._update_line_count)
+        review_layout.addWidget(self.text_edit)
+        text_actions = QHBoxLayout()
+        self.copy_button = QPushButton("📋 Copiar texto")
+        self.copy_button.clicked.connect(self._copy_text)
+        self.line_count_label = QLabel("")
+        self.line_count_label.setObjectName("Muted")
+        text_actions.addWidget(self.copy_button)
+        text_actions.addWidget(self.line_count_label, stretch=1)
+        review_layout.addLayout(text_actions)
+        self.review_container.setVisible(False)
+        content_layout.addWidget(self.review_container)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
@@ -161,10 +182,14 @@ class RedubPage(QWidget):
 
         # -- Ações ------------------------------------------------------- #
         actions = QHBoxLayout()
-        self.process_button = QPushButton("✨ Processar vídeo")
-        self.process_button.setObjectName("Primary")
-        self.process_button.setEnabled(False)
-        self.process_button.clicked.connect(self.request_process)
+        self.transcribe_button = QPushButton("📝 1. Transcrever narração")
+        self.transcribe_button.setObjectName("Primary")
+        self.transcribe_button.setEnabled(False)
+        self.transcribe_button.clicked.connect(self.request_transcribe)
+        self.generate_button = QPushButton("🎙 2. Gerar vídeo com nova voz")
+        self.generate_button.setObjectName("Primary")
+        self.generate_button.setVisible(False)
+        self.generate_button.clicked.connect(self.request_generate)
         self.pause_button = QPushButton("⏸ Pausar")
         self.pause_button.setVisible(False)
         self.pause_button.clicked.connect(self._toggle_pause)
@@ -172,7 +197,8 @@ class RedubPage(QWidget):
         self.cancel_button.setObjectName("Danger")
         self.cancel_button.setVisible(False)
         self.cancel_button.clicked.connect(self.cancelRequested.emit)
-        actions.addWidget(self.process_button, stretch=1)
+        actions.addWidget(self.transcribe_button, stretch=1)
+        actions.addWidget(self.generate_button, stretch=1)
         actions.addWidget(self.pause_button)
         actions.addWidget(self.cancel_button)
         root.addLayout(actions)
@@ -200,7 +226,6 @@ class RedubPage(QWidget):
         s = self.settings
         voice_index = self.voice.findData(s.redub_voice)
         self.voice.setCurrentIndex(max(voice_index, 0))
-        self.voice_reference_input.setText(s.redub_voice_reference)
         self.keep_background.setChecked(s.redub_keep_background)
         self.background_volume.setValue(s.redub_background_volume)
 
@@ -212,43 +237,88 @@ class RedubPage(QWidget):
         """Persiste as opções da Redublagem em Settings/config.json."""
         s = self.settings
         s.redub_voice = self.voice.currentData()
-        s.redub_voice_reference = self.voice_reference_input.text().strip()
         s.redub_keep_background = self.keep_background.isChecked()
         s.redub_background_volume = self.background_volume.value()
         s.save()
-
-    def _pick_voice_reference(self) -> None:
-        """Escolhe um áudio de referência pra clonagem de voz (XTTS)."""
-        exts = " ".join(f"*{ext}" for ext in C.SUPPORTED_AUDIO_EXTENSIONS)
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Selecionar áudio de referência", "", f"Áudio ({exts})",
-        )
-        if path:
-            self.voice_reference_input.setText(str(Path(path)))
-
-    def _clear_voice_reference(self) -> None:
-        self.voice_reference_input.clear()
 
     # ------------------------------------------------------------------ #
     # API pública (usada pela MainWindow)
     # ------------------------------------------------------------------ #
     def set_source(self, source: str) -> None:
-        """Define o vídeo/URL de origem e habilita o botão Processar."""
+        """Define o vídeo/URL de origem e habilita o botão Transcrever."""
         self._source = source
         display = source if len(source) < 90 else source[:87] + "..."
         self.source_label.setText(f"🎞 {display}")
-        self.process_button.setEnabled(True)
+        self.transcribe_button.setEnabled(True)
+        self._reset_review()
 
-    def request_process(self) -> None:
-        """Dispara o processamento."""
-        if not self._source or not self.process_button.isEnabled():
+    def _reset_review(self) -> None:
+        """Esconde a revisão de texto: um vídeo novo invalida a transcrição
+        (e a preparação) da etapa 1 anterior."""
+        self._segment_count = 0
+        self.text_edit.clear()
+        self.review_container.setVisible(False)
+        self.generate_button.setVisible(False)
+
+    def request_transcribe(self) -> None:
+        """Dispara a etapa 1: transcrição + separação de voz/música."""
+        if not self._source or not self.transcribe_button.isEnabled():
             return
         self._save_values()
-        self.processRequested.emit(self._source)
+        self._reset_review()
+        self.transcribeRequested.emit(self._source)
+
+    def show_transcription(self, segment_texts: list[str]) -> None:
+        """Preenche a caixa de revisão com o texto original, um trecho por
+        linha (chamado pela MainWindow quando a etapa 1 termina)."""
+        self._segment_count = len(segment_texts)
+        self.text_edit.setPlainText("\n".join(segment_texts))
+        self.review_container.setVisible(True)
+        self.generate_button.setVisible(True)
+        self.generate_button.setEnabled(True)
+        self._update_line_count()
+
+    def request_generate(self) -> None:
+        """Dispara a etapa 2: gera a nova narração a partir do texto revisado."""
+        if not self.generate_button.isEnabled():
+            return
+        lines = self.text_edit.toPlainText().split("\n")
+        if len(lines) != self._segment_count:
+            QMessageBox.warning(
+                self, "Número de linhas não bate",
+                f"O texto tem {len(lines)} linha(s), mas o vídeo original "
+                f"tem {self._segment_count} trecho(s) falados. Não apague "
+                "nem quebre linhas — edite só o conteúdo de cada uma.",
+            )
+            return
+        self._save_values()
+        self.generateRequested.emit(lines)
+
+    def _copy_text(self) -> None:
+        """Copia o texto revisado pra área de transferência (pra colar num
+        ChatGPT/Claude e pedir pra reescrever)."""
+        QGuiApplication.clipboard().setText(self.text_edit.toPlainText())
+
+    def _update_line_count(self) -> None:
+        """Feedback em tempo real: avisa se o número de linhas não bate mais
+        com os trechos originais (usuário apagou/quebrou alguma linha)."""
+        if self._segment_count == 0:
+            self.line_count_label.setText("")
+            return
+        count = len(self.text_edit.toPlainText().split("\n"))
+        if count == self._segment_count:
+            self.line_count_label.setText(f"✔ {count} linha(s) — bate com os trechos originais.")
+        else:
+            self.line_count_label.setText(
+                f"⚠ {count} linha(s), mas o original tem {self._segment_count} — "
+                "não apague/quebre linhas."
+            )
 
     def set_running(self, running: bool) -> None:
         """Alterna o estado visual entre ocioso e processando."""
-        self.process_button.setEnabled(not running and self._source is not None)
+        self.transcribe_button.setEnabled(not running and self._source is not None)
+        self.generate_button.setEnabled(not running and self._segment_count > 0)
+        self.text_edit.setReadOnly(running)
         self.pause_button.setVisible(running)
         self.pause_button.setEnabled(running)
         self.cancel_button.setVisible(running)

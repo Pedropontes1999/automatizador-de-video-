@@ -140,7 +140,7 @@ class ShortsPipeline:
             # Reutiliza a transcrição de execuções anteriores do mesmo vídeo:
             # economiza vários minutos ao reprocessar (a etapa mais lenta na CPU).
             cache_file = transcript_cache_path(video_path, self.settings.whisper_model)
-            cached = self._load_cached_transcription(
+            cached = WhisperTranscriber.load_cached(
                 cache_file, output_dir / "transcricao.json",
             )
             if cached is None:
@@ -429,22 +429,6 @@ class ShortsPipeline:
             face_found=framing.face_found and bool(centers),
             multi_person=framing.multi_person,
         )
-
-    @staticmethod
-    def _load_cached_transcription(*candidates: Path) -> Transcription | None:
-        """Carrega a transcrição do primeiro arquivo de cache válido."""
-        for cache in candidates:
-            if not cache.exists():
-                continue
-            try:
-                data = json.loads(cache.read_text(encoding="utf-8"))
-                transcription = Transcription.from_dict(data)
-                if transcription.segments:
-                    logger.info("Transcrição em cache reutilizada: %s", cache)
-                    return transcription
-            except (json.JSONDecodeError, KeyError, TypeError) as exc:
-                logger.warning("Cache de transcrição inválido (%s); ignorando.", exc)
-        return None
 
     @staticmethod
     def _save_cuts_json(cuts: list[CutCandidate], output_dir: Path) -> None:

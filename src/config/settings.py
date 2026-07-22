@@ -111,9 +111,13 @@ class Settings:
     redub_voice: str = C.TTS_DEFAULT_VOICE
     redub_keep_background: bool = True
     redub_background_volume: int = 70              # % do volume original
-    # Áudio de referência opcional (voice cloning): quando definido, a IA
-    # clona essa voz em vez de usar um dos speakers prontos do XTTS acima.
-    redub_voice_reference: str = ""
+
+    # --- Transcrição (aba Transcrição) --------------------------------------
+    # Quando `transcript_auto_export` está ligado, os botões de exportar
+    # (TXT/DOCX/MD) gravam direto em `transcript_export_dir` com o nome
+    # padrão, sem abrir o diálogo "Salvar como" a cada clique.
+    transcript_export_dir: str = ""
+    transcript_auto_export: bool = False
 
     # --- Remover Marca d'Água (aba Remover Marca d'Água) --------------------
     # Guarda o último retângulo marcado (coords do vídeo original) pra
@@ -129,6 +133,22 @@ class Settings:
     watermark_cover_mode: str = "image"
     watermark_cover_image_path: str = ""
     watermark_cover_text: str = ""
+
+    # --- Modo Humanizado (aba Editar Shorts) --------------------------------
+    # Pequenas variações automáticas e sorteadas por renderização (zoom/pan/
+    # reenquadramento/cor/nitidez/espelhamento/vinheta/granulado/velocidade)
+    # aplicadas junto com a marca d'água, na mesma passada de exportação.
+    humanize_enabled: bool = False
+    humanize_zoom: bool = True
+    humanize_pan: bool = True
+    humanize_smart_reframe: bool = True
+    humanize_color: bool = True
+    humanize_sharpen: bool = True
+    humanize_mirror: bool = False
+    humanize_vignette: bool = True
+    humanize_grain: bool = False
+    humanize_speed: bool = True
+    humanize_mirror_probability: int = 15   # % de chance de espelhar uma cena aleatória
 
     # --- Editor Simples (aba Editor Simples, edição sem cortes por IA) ----
     # Marca d'água e narração aplicadas a um vídeo inteiro, sem passar pelo

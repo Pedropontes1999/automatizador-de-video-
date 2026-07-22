@@ -135,7 +135,7 @@ def _find_system_font() -> str | None:
     return None
 
 
-def _resolve_frame_size(source: Path, frame_size: tuple[int, int] | None) -> tuple[int, int]:
+def resolve_frame_size(source: Path, frame_size: tuple[int, int] | None) -> tuple[int, int]:
     """Resolve a dimensão do frame pra encaixar a área marcada.
 
     Sempre que disponível, usa a dimensão que a GUI viu de fato (ver
@@ -158,9 +158,14 @@ def remove_watermark(
     crf: int = 20,
     frame_size: tuple[int, int] | None = None,
     on_progress: Callable[[str], None] | None = None,
+    extra_filters: str | None = None,
 ) -> Path:
     """Remove a marca d'água estática da área marcada e reexporta o vídeo
-    (áudio mantido sem reencode)."""
+    (áudio mantido sem reencode).
+
+    `extra_filters` (opcional) é uma cadeia de filtros adicional aplicada
+    logo em seguida, na mesma passada — usado pelo Modo Humanizado pra não
+    precisar reencodar o vídeo duas vezes."""
     source = Path(source)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -170,15 +175,18 @@ def remove_watermark(
         if on_progress:
             on_progress(message)
 
-    frame_w, frame_h = _resolve_frame_size(source, frame_size)
+    frame_w, frame_h = resolve_frame_size(source, frame_size)
     rect = region.clamp(frame_w, frame_h)
 
     notify("Removendo marca d'água...")
     gpu_args = use_gpu and ffmpeg_utils.gpu_encoder_args(crf)
     encoder_args = gpu_args or ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf)]
+    vf = f"delogo=x={rect.x}:y={rect.y}:w={rect.w}:h={rect.h}:show=0"
+    if extra_filters:
+        vf = f"{vf},{extra_filters}"
     ffmpeg_utils.run_ffmpeg([
         "-i", str(source),
-        "-vf", f"delogo=x={rect.x}:y={rect.y}:w={rect.w}:h={rect.h}:show=0",
+        "-vf", vf,
         *encoder_args,
         "-pix_fmt", "yuv420p",
         "-c:a", "copy",
@@ -202,6 +210,7 @@ def blur_watermark(
     crf: int = 20,
     frame_size: tuple[int, int] | None = None,
     on_progress: Callable[[str], None] | None = None,
+    extra_filters: str | None = None,
 ) -> Path:
     """Borra a área marcada (sem reconstruir nem colar nada por cima) e
     reexporta o vídeo (áudio mantido sem reencode).
@@ -210,6 +219,8 @@ def blur_watermark(
     (que exige margem nas bordas) porque `crop`+`gblur` não tem essa
     exigência; a marca costuma ficar bem num canto, então essa margem só
     encolheria a área à toa.
+
+    `extra_filters` (opcional): ver `remove_watermark`.
     """
     source = Path(source)
     output_path = Path(output_path)
@@ -220,7 +231,7 @@ def blur_watermark(
         if on_progress:
             on_progress(message)
 
-    frame_w, frame_h = _resolve_frame_size(source, frame_size)
+    frame_w, frame_h = resolve_frame_size(source, frame_size)
     x = max(0, min(region.x, frame_w - _MIN_SIZE))
     y = max(0, min(region.y, frame_h - _MIN_SIZE))
     w = max(_MIN_SIZE, min(region.w, frame_w - x))
@@ -229,11 +240,14 @@ def blur_watermark(
     notify("Borrando marca d'água...")
     gpu_args = use_gpu and ffmpeg_utils.gpu_encoder_args(crf)
     encoder_args = gpu_args or ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf)]
+    final_label = "merged" if extra_filters else "vout"
     graph = (
         "[0:v]split=2[base][tocrop];"
         f"[tocrop]crop=w={w}:h={h}:x={x}:y={y},gblur=sigma={max(1, strength)}[blurred];"
-        f"[base][blurred]overlay=x={x}:y={y}[vout]"
+        f"[base][blurred]overlay=x={x}:y={y}[{final_label}]"
     )
+    if extra_filters:
+        graph += f";[merged]{extra_filters}[vout]"
     ffmpeg_utils.run_ffmpeg([
         "-i", str(source),
         "-filter_complex", graph,
@@ -261,6 +275,7 @@ def cover_watermark(
     crf: int = 20,
     frame_size: tuple[int, int] | None = None,
     on_progress: Callable[[str], None] | None = None,
+    extra_filters: str | None = None,
 ) -> Path:
     """Cola `cover_image` (esticada pra caber exatamente na área marcada)
     por cima da marca d'água, quadro a quadro.
@@ -270,7 +285,10 @@ def cover_watermark(
     colar só um logo/texto sem uma caixa sólida ao redor. Combine com
     `remove_watermark` antes se a marca original precisar sumir de vez (a
     cobertura sozinha só esconde o que ela realmente cobre; se sobrar
-    transparência em cima da marca antiga, ela continua visível ali)."""
+    transparência em cima da marca antiga, ela continua visível ali).
+
+    `extra_filters` (opcional): ver `remove_watermark`.
+    """
     source = Path(source)
     output_path = Path(output_path)
     cover_image = Path(cover_image)
@@ -283,16 +301,19 @@ def cover_watermark(
         if on_progress:
             on_progress(message)
 
-    frame_w, frame_h = _resolve_frame_size(source, frame_size)
+    frame_w, frame_h = resolve_frame_size(source, frame_size)
     rect = region.clamp(frame_w, frame_h)
 
     notify("Cobrindo marca d'água...")
     gpu_args = use_gpu and ffmpeg_utils.gpu_encoder_args(crf)
     encoder_args = gpu_args or ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf)]
+    final_label = "merged" if extra_filters else "vout"
     graph = (
         f"[1:v]format=rgba,scale={rect.w}:{rect.h}[cover];"
-        f"[0:v][cover]overlay=x={rect.x}:y={rect.y}[vout]"
+        f"[0:v][cover]overlay=x={rect.x}:y={rect.y}[{final_label}]"
     )
+    if extra_filters:
+        graph += f";[merged]{extra_filters}[vout]"
     ffmpeg_utils.run_ffmpeg([
         "-i", str(source), "-i", str(cover_image),
         "-filter_complex", graph,
@@ -320,11 +341,15 @@ def remove_and_cover_watermark(
     crf: int = 20,
     frame_size: tuple[int, int] | None = None,
     on_progress: Callable[[str], None] | None = None,
+    extra_filters: str | None = None,
 ) -> Path:
     """Apaga a marca original (`delogo`) e cola `cover_image` por cima do
     resultado, numa única passada — o combo certo quando `cover_image` tem
     fundo transparente (só assim a marca antiga some por completo em vez de
-    continuar visível ao redor das letras novas)."""
+    continuar visível ao redor das letras novas).
+
+    `extra_filters` (opcional): ver `remove_watermark`.
+    """
     source = Path(source)
     output_path = Path(output_path)
     cover_image = Path(cover_image)
@@ -337,17 +362,20 @@ def remove_and_cover_watermark(
         if on_progress:
             on_progress(message)
 
-    frame_w, frame_h = _resolve_frame_size(source, frame_size)
+    frame_w, frame_h = resolve_frame_size(source, frame_size)
     rect = region.clamp(frame_w, frame_h)
 
     notify("Removendo e cobrindo marca d'água...")
     gpu_args = use_gpu and ffmpeg_utils.gpu_encoder_args(crf)
     encoder_args = gpu_args or ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf)]
+    final_label = "merged" if extra_filters else "vout"
     graph = (
         f"[0:v]delogo=x={rect.x}:y={rect.y}:w={rect.w}:h={rect.h}:show=0[cleaned];"
         f"[1:v]format=rgba,scale={rect.w}:{rect.h}[cover];"
-        f"[cleaned][cover]overlay=x={rect.x}:y={rect.y}[vout]"
+        f"[cleaned][cover]overlay=x={rect.x}:y={rect.y}[{final_label}]"
     )
+    if extra_filters:
+        graph += f";[merged]{extra_filters}[vout]"
     ffmpeg_utils.run_ffmpeg([
         "-i", str(source), "-i", str(cover_image),
         "-filter_complex", graph,

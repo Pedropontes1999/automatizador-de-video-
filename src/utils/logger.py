@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 from typing import Callable
 
@@ -48,6 +49,18 @@ def _configure_root() -> None:
     if _configured:
         return
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # O console do Windows costuma abrir em cp1252/cp437: nomes de vídeo com
+    # emoji ou símbolos incomuns (baixados do YouTube) derrubavam o app
+    # inteiro com UnicodeEncodeError bem no meio de um log de erro. Isso
+    # troca só o tratamento de erro de codificação (nunca falha), sem exigir
+    # UTF-8 no terminal.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="backslashreplace")
+            except (ValueError, OSError):
+                pass
 
     root = logging.getLogger("autoshorts")
     root.setLevel(logging.DEBUG)

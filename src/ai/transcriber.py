@@ -117,3 +117,22 @@ class WhisperTranscriber:
             encoding="utf-8",
         )
         logger.info("Transcrição salva em %s", path)
+
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def load_cached(*candidates: str | Path) -> Transcription | None:
+        """Carrega a transcrição do primeiro arquivo de cache válido entre
+        `candidates` (ou None se nenhum existir/for válido)."""
+        for cache in candidates:
+            cache = Path(cache)
+            if not cache.exists():
+                continue
+            try:
+                data = json.loads(cache.read_text(encoding="utf-8"))
+                transcription = Transcription.from_dict(data)
+                if transcription.segments:
+                    logger.info("Transcrição em cache reutilizada: %s", cache)
+                    return transcription
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                logger.warning("Cache de transcrição inválido (%s); ignorando.", exc)
+        return None

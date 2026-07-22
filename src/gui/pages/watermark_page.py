@@ -1,6 +1,7 @@
-"""Página Remover Marca d'Água: apaga uma marca d'água estática (sempre na
-mesma posição) de um vídeo, marcando a área numa pré-visualização de frame
-dentro do próprio app.
+"""Página Editar Shorts: apaga marca d'água estática (sempre na mesma
+posição) de um vídeo, marcando a área numa pré-visualização de frame dentro
+do próprio app, e opcionalmente aplica o Modo Humanizado (zoom/pan/cor/etc.
+sorteados) na mesma exportação.
 """
 from __future__ import annotations
 
@@ -13,7 +14,10 @@ from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QFileDialog,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -23,6 +27,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QScrollArea,
     QSlider,
+    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -34,6 +39,7 @@ from src.gui.widgets.drop_area import DropArea
 from src.gui.widgets.frame_rect_selector import FrameRectSelector
 from src.utils.logger import get_logger
 from src.utils.paths import new_temp_dir, sanitize_filename
+from src.video.humanize.params import HumanizeToggles
 from src.video.watermark_remover import WatermarkRegion, extract_frame, render_text_cover
 from src.workers.watermark_worker import WatermarkWorker
 
@@ -73,14 +79,16 @@ class WatermarkPage(QWidget):
         outer.setContentsMargins(24, 20, 24, 20)
         outer.setSpacing(14)
 
-        title = QLabel("Remover Marca d'Água")
+        title = QLabel("Editar Shorts")
         title.setObjectName("SectionTitle")
         outer.addWidget(title)
         subtitle = QLabel(
             "Envie um vídeo, carregue um frame, arraste um retângulo em cima "
             "da marca d'água e remova. Se a marca fica sempre no mesmo lugar "
             "(ex.: vários vídeos do mesmo canal), a última área marcada é "
-            "reaproveitada automaticamente no próximo vídeo."
+            "reaproveitada automaticamente no próximo vídeo. Ative o Modo "
+            "Humanizado abaixo pra sortear pequenas variações (zoom, câmera, "
+            "cor...) na mesma exportação."
         )
         subtitle.setObjectName("Muted")
         subtitle.setWordWrap(True)
@@ -211,6 +219,8 @@ class WatermarkPage(QWidget):
 
         content_layout.addWidget(self.cover_stack)
 
+        content_layout.addWidget(self._build_humanize_group())
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
@@ -245,6 +255,90 @@ class WatermarkPage(QWidget):
         return label
 
     # ------------------------------------------------------------------ #
+    # Modo Humanizado
+    # ------------------------------------------------------------------ #
+    def _build_humanize_group(self) -> QGroupBox:
+        """Grupo do Modo Humanizado: o título é o próprio botão liga/desliga
+        (`setCheckable`), com o menu avançado (sub-efeitos individuais) logo
+        abaixo — sempre visível, mesmo desligado, pra facilitar ajustar antes
+        de ligar."""
+        group = QGroupBox("✨ Modo Humanizado")
+        group.setCheckable(True)
+        group.setToolTip(
+            "Aplica pequenas variações automáticas e sorteadas (zoom, câmera, "
+            "cor, nitidez...) na mesma exportação, pra este vídeo nunca sair "
+            "tecnicamente idêntico ao original. Preserva a experiência do "
+            "vídeo — não é um 'edit' cheio de efeitos."
+        )
+        self.humanize_group = group
+        layout = QVBoxLayout(group)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        self.humanize_zoom = QCheckBox("Zoom Dinâmico")
+        self.humanize_pan = QCheckBox("Pan (câmera)")
+        self.humanize_smart_reframe = QCheckBox("Reenquadramento Inteligente")
+        self.humanize_color = QCheckBox("Correção de Cor")
+        self.humanize_sharpen = QCheckBox("Nitidez")
+        self.humanize_mirror = QCheckBox("Espelhamento Parcial")
+        self.humanize_vignette = QCheckBox("Vinheta")
+        self.humanize_grain = QCheckBox("Granulado")
+        self.humanize_speed = QCheckBox("Variação de Velocidade")
+        checks = (
+            self.humanize_zoom, self.humanize_pan, self.humanize_smart_reframe,
+            self.humanize_color, self.humanize_sharpen, self.humanize_mirror,
+            self.humanize_vignette, self.humanize_grain, self.humanize_speed,
+        )
+        for i, checkbox in enumerate(checks):
+            grid.addWidget(checkbox, i // 3, i % 3)
+        layout.addLayout(grid)
+
+        mirror_row = QHBoxLayout()
+        mirror_row.addWidget(QLabel("Chance de espelhar uma cena aleatória:"))
+        self.humanize_mirror_probability = QSpinBox(minimum=0, maximum=100, suffix=" %")
+        self.humanize_mirror_probability.setToolTip(
+            "Espelhamento nunca cobre o vídeo inteiro — no máximo uma janela "
+            "curta e aleatória, e só quando 'Espelhamento Parcial' está ligado."
+        )
+        mirror_row.addWidget(self.humanize_mirror_probability)
+        mirror_row.addStretch()
+        layout.addLayout(mirror_row)
+
+        return group
+
+    def _humanize_toggles(self) -> HumanizeToggles | None:
+        """Lê os checkboxes e devolve os toggles ativos, ou None se o Modo
+        Humanizado estiver desligado (nada extra é aplicado nesse caso)."""
+        if not self.humanize_group.isChecked():
+            return None
+        return HumanizeToggles(
+            zoom=self.humanize_zoom.isChecked(),
+            pan=self.humanize_pan.isChecked(),
+            smart_reframe=self.humanize_smart_reframe.isChecked(),
+            color=self.humanize_color.isChecked(),
+            sharpen=self.humanize_sharpen.isChecked(),
+            mirror=self.humanize_mirror.isChecked(),
+            vignette=self.humanize_vignette.isChecked(),
+            grain=self.humanize_grain.isChecked(),
+            speed=self.humanize_speed.isChecked(),
+            mirror_probability=self.humanize_mirror_probability.value() / 100.0,
+        )
+
+    def _save_humanize_values(self) -> None:
+        s = self.settings
+        s.humanize_enabled = self.humanize_group.isChecked()
+        s.humanize_zoom = self.humanize_zoom.isChecked()
+        s.humanize_pan = self.humanize_pan.isChecked()
+        s.humanize_smart_reframe = self.humanize_smart_reframe.isChecked()
+        s.humanize_color = self.humanize_color.isChecked()
+        s.humanize_sharpen = self.humanize_sharpen.isChecked()
+        s.humanize_mirror = self.humanize_mirror.isChecked()
+        s.humanize_vignette = self.humanize_vignette.isChecked()
+        s.humanize_grain = self.humanize_grain.isChecked()
+        s.humanize_speed = self.humanize_speed.isChecked()
+        s.humanize_mirror_probability = self.humanize_mirror_probability.value()
+
+    # ------------------------------------------------------------------ #
     _COVER_MODES = ("image", "text", "blur")
 
     def _load_values(self) -> None:
@@ -254,6 +348,19 @@ class WatermarkPage(QWidget):
         index = self._COVER_MODES.index(mode) if mode in self._COVER_MODES else 0
         self.cover_mode_group.button(index).setChecked(True)
         self.cover_stack.setCurrentIndex(index)
+
+        s = self.settings
+        self.humanize_group.setChecked(s.humanize_enabled)
+        self.humanize_zoom.setChecked(s.humanize_zoom)
+        self.humanize_pan.setChecked(s.humanize_pan)
+        self.humanize_smart_reframe.setChecked(s.humanize_smart_reframe)
+        self.humanize_color.setChecked(s.humanize_color)
+        self.humanize_sharpen.setChecked(s.humanize_sharpen)
+        self.humanize_mirror.setChecked(s.humanize_mirror)
+        self.humanize_vignette.setChecked(s.humanize_vignette)
+        self.humanize_grain.setChecked(s.humanize_grain)
+        self.humanize_speed.setChecked(s.humanize_speed)
+        self.humanize_mirror_probability.setValue(s.humanize_mirror_probability)
 
     def _on_cover_mode_changed(self, mode_id: int) -> None:
         self.cover_stack.setCurrentIndex(mode_id)
@@ -425,6 +532,7 @@ class WatermarkPage(QWidget):
         s.watermark_cover_mode = mode
         s.watermark_cover_image_path = self.cover_image_path.text().strip()
         s.watermark_cover_text = self.cover_text.text().strip()
+        self._save_humanize_values()
         s.save()
 
         output_path = self._build_output_path(self._source)
@@ -433,6 +541,7 @@ class WatermarkPage(QWidget):
             self._source, output_path, WatermarkRegion(x, y, w, h),
             method=worker_method, cover_image=cover_image,
             use_gpu=s.use_gpu, crf=s.quality_crf, frame_size=self._frame_size,
+            humanize_toggles=self._humanize_toggles(),
         )
         self._worker.progressChanged.connect(self._on_progress)
         self._worker.succeeded.connect(self._on_succeeded)
@@ -446,9 +555,21 @@ class WatermarkPage(QWidget):
 
     @staticmethod
     def _build_output_path(source: str) -> Path:
+        """Resolve o caminho de saída, evitando gravar em cima do próprio
+        arquivo de entrada — acontece ao reprocessar um vídeo que já está em
+        output/sem_marca/ (ex.: rodar o Modo Humanizado numa saída anterior
+        desta mesma aba); o FFmpeg recusa escrever no arquivo que está lendo."""
         C.WATERMARK_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         stem = sanitize_filename(Path(source).stem)
-        return C.WATERMARK_OUTPUT_DIR / f"{stem}_sem_marca_coberto.mp4"
+        if stem.endswith("_sem_marca_coberto"):
+            stem = stem[: -len("_sem_marca_coberto")]
+        source_resolved = Path(source).resolve()
+        output = C.WATERMARK_OUTPUT_DIR / f"{stem}_sem_marca_coberto.mp4"
+        version = 2
+        while output.resolve() == source_resolved:
+            output = C.WATERMARK_OUTPUT_DIR / f"{stem}_sem_marca_coberto_v{version}.mp4"
+            version += 1
+        return output
 
     def _on_progress(self, message: str) -> None:
         self.status_label.setText(message)

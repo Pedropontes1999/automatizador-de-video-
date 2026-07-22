@@ -122,20 +122,16 @@ SUPPORTED_AUDIO_EXTENSIONS: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 # Narração (TTS via XTTS v2/Coqui — local, offline, voz bem mais natural)
 # ---------------------------------------------------------------------------
-# Trocado do Piper em 2026-07 por pedido explícito do usuário: Piper é ~10x
-# mais rápido, mas soa artificial demais; XTTS é bem mais humano só que
-# pesado — cada trecho leva ~10-12s na CPU (sem GPU NVIDIA/CUDA disponível
-# nesta máquina), então uma Redublagem de vídeo longo (centenas/milhares de
-# trechos) pode levar HORAS só na narração. Aceito conscientemente pela
-# qualidade da voz. Formato do id: "xtts:<idioma>:<nome do speaker>".
+# Voz "edge:<nome curto da voz Microsoft Edge TTS>" usa a nuvem da
+# Microsoft: grátis, sem chave de API, rápida e sem precisar de GPU — mas
+# precisa de internet e não aceita clonagem de voz (`voice_reference` é
+# ignorado pra essas vozes). Único motor/voz por pedido do usuário em
+# 2026-07 (voz "Antônio", grave e natural — testada e aprovada; as vozes
+# XTTS locais foram removidas da lista).
 TTS_VOICES: dict[str, str] = {
-    "xtts:pt:Xavier Hayasaka": "Xavier (masculina, jovem)",
-    "xtts:pt:Luis Moray": "Luis (masculina)",
-    "xtts:pt:Andrew Chipper": "Andrew (masculina)",
-    "xtts:pt:Ana Florence": "Ana (feminina)",
-    "xtts:pt:Alma María": "Alma (feminina)",
+    "edge:pt-BR-AntonioNeural": "Antônio (Edge TTS, grave e natural)",
 }
-TTS_DEFAULT_VOICE: str = "xtts:pt:Xavier Hayasaka"
+TTS_DEFAULT_VOICE: str = "edge:pt-BR-AntonioNeural"
 
 # ---------------------------------------------------------------------------
 # Legendas
@@ -151,3 +147,22 @@ DEFAULT_SUBTITLE_STYLE: str = "TikTok"
 SILENCE_THRESHOLD_DB: float = -35.0
 MIN_SILENCE_SECONDS: float = 0.8
 FILLER_WORDS_PT: tuple[str, ...] = ("ãh", "éh", "hum", "né", "tipo assim")
+
+# ---------------------------------------------------------------------------
+# Modo Humanizado (aba Editar Shorts): pequenas variações automáticas e
+# sorteadas por renderização, pra duas exportações do mesmo vídeo nunca
+# saírem tecnicamente idênticas (zoom/pan/cor/etc. — nunca efeitos chamativos)
+# ---------------------------------------------------------------------------
+HUMANIZE_ZOOM_MIN: float = 1.01
+HUMANIZE_ZOOM_MAX: float = 1.08
+HUMANIZE_ZOOM_SEGMENT_MIN_SECONDS: float = 2.0
+HUMANIZE_ZOOM_SEGMENT_MAX_SECONDS: float = 5.0
+HUMANIZE_PAN_DIRECTIONS: tuple[str, ...] = (
+    "left_right", "right_left", "top_bottom", "bottom_top",
+    "diagonal_tl_br", "diagonal_tr_bl",
+)
+HUMANIZE_SPEED_MIN: float = 0.998
+HUMANIZE_SPEED_MAX: float = 1.002
+HUMANIZE_GRAIN_MIN: float = 2.0   # %
+HUMANIZE_GRAIN_MAX: float = 4.0   # %
+HUMANIZE_COLOR_PRESETS: tuple[str, ...] = ("A", "B", "C")

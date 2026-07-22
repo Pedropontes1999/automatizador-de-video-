@@ -37,7 +37,7 @@ from src.gui.widgets.sidebar import Sidebar
 from src.services.project_service import ProjectService
 from src.utils.logger import get_logger
 from src.workers.pipeline_worker import PipelineWorker
-from src.workers.redub_worker import RedubWorker
+from src.workers.redub_worker import RedubGenerateWorker, RedubPrepareWorker
 from src.workers.video_editor_worker import VideoEditorWorker
 
 logger = get_logger("main_window")
@@ -71,7 +71,8 @@ class MainWindow(QWidget):
         self.service = ProjectService(settings)
         self.worker: PipelineWorker | None = None
         self.editor_worker: VideoEditorWorker | None = None
-        self.redub_worker: RedubWorker | None = None
+        self.redub_worker: RedubPrepareWorker | RedubGenerateWorker | None = None
+        self._redub_preparation = None  # RedubPreparation da última transcrição (etapa 1)
         self._queue: deque[str] = deque()  # fila de vídeos aguardando
 
         init_database()
@@ -141,8 +142,9 @@ class MainWindow(QWidget):
         self.editor.resumeRequested.connect(self._resume_editor_worker)
         self.editor.cancelRequested.connect(self._cancel_editor_worker)
 
-        # Fluxo da Redublagem
-        self.redub.processRequested.connect(self._start_redub_worker)
+        # Fluxo da Redublagem (2 etapas: transcrever, depois gerar a nova voz)
+        self.redub.transcribeRequested.connect(self._start_redub_prepare)
+        self.redub.generateRequested.connect(self._start_redub_generate)
         self.redub.pauseRequested.connect(self._pause_redub_worker)
         self.redub.resumeRequested.connect(self._resume_redub_worker)
         self.redub.cancelRequested.connect(self._cancel_redub_worker)
@@ -360,22 +362,55 @@ class MainWindow(QWidget):
     # ------------------------------------------------------------------ #
     # Redublagem (troca a voz do narrador, mantendo música/efeitos)
     # ------------------------------------------------------------------ #
-    def _start_redub_worker(self, source: str) -> None:
-        """Cria e inicia o worker da Redublagem."""
+    def _start_redub_prepare(self, source: str) -> None:
+        """Etapa 1: cria e inicia o worker de transcrição da Redublagem."""
         blocking = self._any_worker_running(exclude="redublagem")
         if blocking is not None:
             QMessageBox.warning(
                 self, "Aguarde", f"Termine a {blocking} atual antes de redublar outro vídeo.",
             )
             return
-        self.redub_worker = RedubWorker(self.settings, source)
+        self._redub_preparation = None
+        self.redub_worker = RedubPrepareWorker(self.settings, source)
+        self.redub_worker.progressChanged.connect(self.redub.update_progress)
+        self.redub_worker.succeeded.connect(self._on_redub_prepared)
+        self.redub_worker.failed.connect(self._on_redub_failed)
+        self.redub_worker.cancelled.connect(self._on_redub_cancelled)
+        self.redub_worker.start()
+        self.redub.set_running(True)
+        logger.info("Transcrição da redublagem iniciada: %s", source)
+
+    def _on_redub_prepared(self, preparation) -> None:
+        """Etapa 1 concluída: mostra o texto original pro usuário reescrever."""
+        self.redub_worker = None
+        self._redub_preparation = preparation
+        self.redub.set_running(False)
+        texts = [seg.text.strip() for seg in preparation.segments]
+        self.redub.show_transcription(texts)
+        self.redub.update_progress(100, "Transcrição pronta — revise o texto e gere a nova voz.")
+
+    def _start_redub_generate(self, texts: list[str]) -> None:
+        """Etapa 2: gera a nova narração a partir do texto revisado pelo usuário."""
+        if self._redub_preparation is None:
+            QMessageBox.warning(
+                self, "Transcreva primeiro",
+                "Transcreva o vídeo (etapa 1) antes de gerar a nova narração.",
+            )
+            return
+        blocking = self._any_worker_running(exclude="redublagem")
+        if blocking is not None:
+            QMessageBox.warning(
+                self, "Aguarde", f"Termine a {blocking} atual antes de gerar a redublagem.",
+            )
+            return
+        self.redub_worker = RedubGenerateWorker(self.settings, self._redub_preparation, texts)
         self.redub_worker.progressChanged.connect(self.redub.update_progress)
         self.redub_worker.finished_ok.connect(self._on_redub_finished)
         self.redub_worker.failed.connect(self._on_redub_failed)
         self.redub_worker.cancelled.connect(self._on_redub_cancelled)
         self.redub_worker.start()
         self.redub.set_running(True)
-        logger.info("Redublagem iniciada: %s", source)
+        logger.info("Geração da nova narração (redublagem) iniciada.")
 
     def _pause_redub_worker(self) -> None:
         if self.redub_worker is not None:
@@ -396,17 +431,20 @@ class MainWindow(QWidget):
             )
 
     def _on_redub_finished(self, output_path: str) -> None:
+        self.redub_worker = None
         self.redub.set_running(False)
         QMessageBox.information(
             self, "Concluído", f"Vídeo redublado salvo em:\n{output_path}",
         )
 
     def _on_redub_failed(self, message: str) -> None:
+        self.redub_worker = None
         self.redub.set_running(False)
         self.redub.update_progress(0, "Erro no processamento.")
         QMessageBox.warning(self, "Erro na redublagem", message)
 
     def _on_redub_cancelled(self) -> None:
+        self.redub_worker = None
         self.redub.set_running(False)
         self.redub.update_progress(0, "Cancelado.")
 
@@ -453,7 +491,7 @@ class MainWindow(QWidget):
             if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
-            # A exportação via FFmpeg não é cancelável no meio (chamada
+           # A exportação via FFmpeg não é cancelável no meio (chamada]
             # bloqueante única); espera terminar e força se necessário.
             if not self.simple_editor_page.wait_running_worker(8000):
                 logger.warning("Edição não respondeu ao fechar; terminando.")

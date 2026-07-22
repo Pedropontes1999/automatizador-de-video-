@@ -15,11 +15,12 @@ class Sidebar(QWidget):
         ("🎬", "Início"),
         ("⬇️", "Download"),
         ("🎞️", "Editor / Redublagem"),
+        ("📝", "Transcrição"),
         ("📊", "Dashboard"),
         ("🕘", "Histórico"),
         ("🖊️", "Editor Simples"),
         ("✂️", "Cortar Vídeo"),
-        ("🧹", "Remover Marca d'Água"),
+        ("🪄", "EDITAR SHORTS"),
         ("🎨", "Estilo"),
         ("⚙️", "Configurações"),
     )
