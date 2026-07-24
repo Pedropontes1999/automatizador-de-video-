@@ -1,6 +1,7 @@
 """Página Redublagem: troca a voz do narrador de um vídeo já pronto por uma
-narração de IA sincronizada por trecho, mantendo (opcionalmente) a
-música/efeitos de fundo originais via separação por IA (Demucs).
+narração de IA sincronizada por trecho. O áudio original inteiro (voz +
+música/efeitos) é descartado e substituído por uma música de fundo escolhida
+pelo usuário, tocando em loop do início ao fim do vídeo.
 
 Fluxo em duas etapas — o objetivo não é só trocar o timbre da voz, é permitir
 reescrever a narração com outras palavras antes de gerar a voz nova:
@@ -19,8 +20,8 @@ import time
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -46,6 +47,7 @@ class RedubPage(QWidget):
     """Tela da Redublagem por IA."""
 
     transcribeRequested = Signal(str)   # caminho do arquivo ou URL (etapa 1)
+    translateRequested = Signal(object)  # list[str] a traduzir (etapa 1.5, opcional)
     generateRequested = Signal(object)  # list[str], uma linha por trecho (etapa 2)
     pauseRequested = Signal()
     resumeRequested = Signal()
@@ -103,21 +105,24 @@ class RedubPage(QWidget):
             self.voice.addItem(label, userData=voice)
         form.addRow("Voz:", self.voice)
 
-        # -- Música/efeitos de fundo -------------------------------------- #
-        form.addRow(self._section("🎵 Música e efeitos de fundo"))
-        self.keep_background = QCheckBox(
-            "Manter a música/efeitos do vídeo original (separação por IA)"
+        # -- Música de fundo ----------------------------------------------- #
+        form.addRow(self._section("🎵 Música de fundo"))
+        music_hint = QLabel(
+            "O áudio original do vídeo (voz + música/efeitos) é sempre "
+            "descartado. Escolha uma música pra tocar em loop do início ao "
+            "fim, por baixo da nova narração — sem escolher nenhuma, o "
+            "vídeo sai só com a narração."
         )
-        self.keep_background.setToolTip(
-            "Usa IA (Demucs) para separar a voz do narrador do resto do "
-            "áudio. Pode demorar bastante em vídeos longos sem GPU."
-        )
-        self.background_volume = QSpinBox(minimum=0, maximum=150, suffix=" %")
-        self.background_volume.setToolTip(
-            "Volume da música/efeitos originais em relação à nova narração"
-        )
-        form.addRow("", self.keep_background)
-        form.addRow("Volume:", self.background_volume)
+        music_hint.setObjectName("Muted")
+        music_hint.setWordWrap(True)
+        form.addRow(music_hint)
+        self.music_path = QLineEdit()
+        self.music_path.setReadOnly(True)
+        self.music_path.setPlaceholderText("Nenhuma música escolhida (opcional)")
+        form.addRow("Arquivo:", self._file_row(self.music_path, self._pick_music))
+        self.music_volume = QSpinBox(minimum=0, maximum=150, suffix=" %")
+        self.music_volume.setToolTip("Volume da música em relação à nova narração")
+        form.addRow("Volume:", self.music_volume)
 
         content_layout.addLayout(form)
 
@@ -167,9 +172,18 @@ class RedubPage(QWidget):
         text_actions = QHBoxLayout()
         self.copy_button = QPushButton("📋 Copiar texto")
         self.copy_button.clicked.connect(self._copy_text)
+        self.translate_button = QPushButton("🌐 Traduzir p/ PT-BR (IA)")
+        self.translate_button.setToolTip(
+            "Traduz o texto acima para português do Brasil usando o Ollama "
+            "local, mantendo a quantidade de linhas. Use quando o vídeo "
+            "original está em outro idioma — a voz de narração é só em "
+            "PT-BR, então o texto precisa estar em português antes de gerar."
+        )
+        self.translate_button.clicked.connect(self.request_translate)
         self.line_count_label = QLabel("")
         self.line_count_label.setObjectName("Muted")
         text_actions.addWidget(self.copy_button)
+        text_actions.addWidget(self.translate_button)
         text_actions.addWidget(self.line_count_label, stretch=1)
         review_layout.addLayout(text_actions)
         self.review_container.setVisible(False)
@@ -221,13 +235,37 @@ class RedubPage(QWidget):
         label.setObjectName("SectionTitle")
         return label
 
+    def _file_row(self, line_edit: QLineEdit, pick_slot) -> QWidget:
+        """Linha com campo somente leitura + botões Escolher/Remover."""
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        choose = QPushButton("📂 Escolher...")
+        choose.clicked.connect(pick_slot)
+        clear = QPushButton("✖")
+        clear.setToolTip("Remover")
+        clear.setFixedWidth(36)
+        clear.clicked.connect(lambda: line_edit.setText(""))
+        layout.addWidget(line_edit, stretch=1)
+        layout.addWidget(choose)
+        layout.addWidget(clear)
+        return row
+
+    def _pick_music(self) -> None:
+        patterns = " ".join(f"*{ext}" for ext in C.SUPPORTED_AUDIO_EXTENSIONS)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Escolher música de fundo", "", f"Áudios/Vídeos ({patterns})",
+        )
+        if path:
+            self.music_path.setText(path)
+
     # ------------------------------------------------------------------ #
     def _load_values(self) -> None:
         s = self.settings
         voice_index = self.voice.findData(s.redub_voice)
         self.voice.setCurrentIndex(max(voice_index, 0))
-        self.keep_background.setChecked(s.redub_keep_background)
-        self.background_volume.setValue(s.redub_background_volume)
+        self.music_path.setText(s.redub_music_path)
+        self.music_volume.setValue(s.redub_music_volume)
 
     def save(self) -> None:
         """Persiste as opções da Redublagem (usado pelo atalho Ctrl+S)."""
@@ -237,8 +275,8 @@ class RedubPage(QWidget):
         """Persiste as opções da Redublagem em Settings/config.json."""
         s = self.settings
         s.redub_voice = self.voice.currentData()
-        s.redub_keep_background = self.keep_background.isChecked()
-        s.redub_background_volume = self.background_volume.value()
+        s.redub_music_path = self.music_path.text().strip()
+        s.redub_music_volume = self.music_volume.value()
         s.save()
 
     # ------------------------------------------------------------------ #
@@ -276,7 +314,38 @@ class RedubPage(QWidget):
         self.review_container.setVisible(True)
         self.generate_button.setVisible(True)
         self.generate_button.setEnabled(True)
+        self.translate_button.setEnabled(True)
         self._update_line_count()
+
+    def request_translate(self) -> None:
+        """Dispara a tradução (via IA local/Ollama) do texto revisado para
+        PT-BR — usada quando o vídeo original está em outro idioma."""
+        if not self.translate_button.isEnabled():
+            return
+        lines = self.text_edit.toPlainText().split("\n")
+        if len(lines) != self._segment_count:
+            QMessageBox.warning(
+                self, "Número de linhas não bate",
+                f"O texto tem {len(lines)} linha(s), mas o vídeo original "
+                f"tem {self._segment_count} trecho(s) falados. Não apague "
+                "nem quebre linhas antes de traduzir.",
+            )
+            return
+        self.translateRequested.emit(lines)
+
+    def apply_translation(self, texts: list[str]) -> None:
+        """Substitui o texto de revisão pela tradução (chamado pela
+        MainWindow quando a tradução termina)."""
+        self.text_edit.setPlainText("\n".join(texts))
+        self._update_line_count()
+
+    def set_translating(self, running: bool) -> None:
+        """Alterna o estado visual durante a tradução — mais rápida que
+        transcrever/gerar, então não usa cronômetro nem pausa/cancela."""
+        self.transcribe_button.setEnabled(not running and self._source is not None)
+        self.generate_button.setEnabled(not running and self._segment_count > 0)
+        self.translate_button.setEnabled(not running and self._segment_count > 0)
+        self.text_edit.setReadOnly(running)
 
     def request_generate(self) -> None:
         """Dispara a etapa 2: gera a nova narração a partir do texto revisado."""
@@ -318,6 +387,7 @@ class RedubPage(QWidget):
         """Alterna o estado visual entre ocioso e processando."""
         self.transcribe_button.setEnabled(not running and self._source is not None)
         self.generate_button.setEnabled(not running and self._segment_count > 0)
+        self.translate_button.setEnabled(not running and self._segment_count > 0)
         self.text_edit.setReadOnly(running)
         self.pause_button.setVisible(running)
         self.pause_button.setEnabled(running)

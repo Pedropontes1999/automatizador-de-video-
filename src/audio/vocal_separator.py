@@ -4,9 +4,15 @@ Usado pela Redublagem tanto pra manter a música/efeitos originais quanto pra
 transcrever só a voz isolada (stem "vocals"), em vez do áudio completo —
 transcrever o áudio cru faz o Whisper "ouvir" fala em música/efeitos
 sonoros e tratar esse texto alucinado como se fosse narração, redublando
-coisa que não é o narrador. O Demucs baixa o modelo pré-treinado (~80 MB) na
-primeira execução — precisa de internet nessa primeira vez, igual ao
-Whisper/XTTS. Uma falha aqui nunca derruba o pipeline.
+coisa que não é o narrador. O Demucs baixa o modelo pré-treinado na primeira
+execução — precisa de internet nessa primeira vez, igual ao Whisper.
+Uma falha aqui nunca derruba o pipeline.
+
+Usa o modelo "htdemucs_ft" (ensemble de 4 modelos, fine-tuned pela Meta) em
+vez do "htdemucs" padrão: separa a voz de forma bem mais limpa, reduzindo o
+vazamento da narração original no stem "no_vocals" (que ficava audível por
+baixo da narração de IA depois da mixagem). O custo é ~4x mais lento —
+aceitável porque essa etapa roda uma vez só por vídeo.
 """
 from __future__ import annotations
 
@@ -21,7 +27,7 @@ logger = get_logger("vocal_separator")
 
 # No Windows, esconde a janela de console do subprocesso.
 _CREATION_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-_MODEL = "htdemucs"
+_MODEL = "htdemucs_ft"
 
 
 @dataclass
@@ -62,7 +68,7 @@ def separate_vocals(
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=3600, creationflags=_CREATION_FLAGS,
+            timeout=10800, creationflags=_CREATION_FLAGS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         logger.warning("Demucs indisponível (%s); seguindo sem separação.", exc)

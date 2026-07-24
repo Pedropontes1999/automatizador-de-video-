@@ -120,18 +120,20 @@ SUPPORTED_AUDIO_EXTENSIONS: tuple[str, ...] = (
 )
 
 # ---------------------------------------------------------------------------
-# Narração (TTS via XTTS v2/Coqui — local, offline, voz bem mais natural)
+# Narração (TTS via ElevenLabs — nuvem, paga)
 # ---------------------------------------------------------------------------
-# Voz "edge:<nome curto da voz Microsoft Edge TTS>" usa a nuvem da
-# Microsoft: grátis, sem chave de API, rápida e sem precisar de GPU — mas
-# precisa de internet e não aceita clonagem de voz (`voice_reference` é
-# ignorado pra essas vozes). Único motor/voz por pedido do usuário em
-# 2026-07 (voz "Antônio", grave e natural — testada e aprovada; as vozes
-# XTTS locais foram removidas da lista).
+# Único motor de narração do app (ver `src/audio/tts.py`) por escolha do
+# usuário em 2026-07 ao assinar um plano pago — os motores anteriores
+# (Piper, XTTS v2/Coqui, Microsoft Edge TTS) foram removidos. Fixada nessa
+# única voz (Lax, afinada para PT-BR); precisa de `elevenlabs_api_key`
+# configurada (Configurações) e de plano pago ativo na conta.
 TTS_VOICES: dict[str, str] = {
-    "edge:pt-BR-AntonioNeural": "Antônio (Edge TTS, grave e natural)",
+    "eleven:tS45q0QcrDHqHoaWdCDR": "Lax (ElevenLabs, PT-BR)",
+    "eleven:WSBwiRQRmi2mEG7BfKwS": "Yuri (ElevenLabs, PT-BR)",
+    "eleven:ulzsiMeCbfKyTPCNhCD5": "Nassif (ElevenLabs, PT-BR)",
 }
-TTS_DEFAULT_VOICE: str = "edge:pt-BR-AntonioNeural"
+TTS_DEFAULT_VOICE: str = "eleven:tS45q0QcrDHqHoaWdCDR"
+ELEVENLABS_MODEL_ID: str = "eleven_multilingual_v2"
 
 # ---------------------------------------------------------------------------
 # Legendas

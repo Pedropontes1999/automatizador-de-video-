@@ -16,6 +16,7 @@ reeditado nem reencodado — só a trilha de áudio é trocada (`-c:v copy`).
 """
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
@@ -53,7 +54,6 @@ class RedubPreparation:
     temp_dir: Path
     duration: float
     segments: list[TranscriptSegment]
-    background_path: Path | None
 
 
 @dataclass
@@ -82,6 +82,19 @@ class RedubPipeline:
         temp_dir = new_temp_dir("redub")
         control.checkpoint()
 
+        # Copia o vídeo original pra pasta de trabalho temporária: a revisão
+        # do texto entre prepare() e generate() pode levar horas (o usuário
+        # reescrevendo a narração), e nesse meio tempo o arquivo original
+        # (baixado em downloads/ ou escolhido em outro lugar) pode ser
+        # apagado/movido sem nenhuma relação com essa Redublagem em
+        # andamento. Trabalhando numa cópia isolada em temp/, generate()
+        # nunca mais depende do arquivo original continuar existindo.
+        cb.on_progress(20, "Copiando vídeo para a área de trabalho...")
+        local_video_path = temp_dir / video_path.name
+        shutil.copy2(video_path, local_video_path)
+        video_path = local_video_path
+        control.checkpoint()
+
         cb.on_progress(25, "Extraindo áudio original...")
         audio_path = extract_audio_hq(video_path, temp_dir)
         control.checkpoint()
@@ -90,11 +103,13 @@ class RedubPipeline:
         # cru faz o Whisper "ouvir" fala em música/efeitos sonoros e tratar
         # esse texto alucinado como narração. Transcrevendo só o stem
         # "vocals" (e depois filtrando por confiança abaixo), a Redublagem
-        # troca só o que é voz de verdade, não o áudio do vídeo inteiro.
+        # troca só o que é voz de verdade, não o áudio do vídeo inteiro. O
+        # stem "no_vocals" (música/efeitos originais) é descartado: o áudio
+        # final leva só a narração nova + a música escolhida pelo usuário
+        # (ver `generate()`), nunca o som original do vídeo.
         cb.on_progress(40, "Separando a voz do resto do áudio (pode demorar)...")
         separated = separate_vocals(audio_path, temp_dir, use_gpu=s.use_gpu)
         vocals_path = separated.vocals if separated else audio_path
-        background_path = separated.no_vocals if (separated and s.redub_keep_background) else None
         control.checkpoint()
 
         cb.on_progress(65, "Transcrevendo a narração original com Whisper...")
@@ -118,7 +133,7 @@ class RedubPipeline:
         cb.on_progress(100, "Transcrição pronta — revise o texto antes de gerar a nova voz.")
         return RedubPreparation(
             video_path=video_path, temp_dir=temp_dir, duration=info["duration"],
-            segments=segments, background_path=background_path,
+            segments=segments,
         )
 
     def generate(
@@ -142,15 +157,18 @@ class RedubPipeline:
         ]
 
         cb.on_progress(10, "Gerando a nova narração por IA (sincronizada por trecho)...")
-        narration_track = build_narration_track(segments, s.redub_voice, preparation.temp_dir)
+        narration_track = build_narration_track(
+            segments, s.redub_voice, preparation.temp_dir, api_key=s.elevenlabs_api_key,
+        )
         control.checkpoint()
 
         cb.on_progress(60, "Montando o vídeo final (pode demorar alguns minutos)...")
         output_dir = project_output_dir(preparation.video_path.stem)
         output_path = output_dir / f"{sanitize_filename(preparation.video_path.stem)}_redublado.mp4"
+        music_path = s.redub_music_path if s.redub_music_path and Path(s.redub_music_path).exists() else None
         mux_final_audio(
-            preparation.video_path, narration_track, preparation.background_path, output_path,
-            duration=preparation.duration, background_volume=s.redub_background_volume,
+            preparation.video_path, narration_track, music_path, output_path,
+            duration=preparation.duration, music_volume=s.redub_music_volume,
             use_gpu=s.use_gpu, crf=s.quality_crf,
         )
 

@@ -1,12 +1,15 @@
 """Workers QThread da Redublagem, um por etapa do `RedubPipeline`:
 
 - `RedubPrepareWorker` — transcrição + separação de voz/música (etapa 1).
+- `RedubTranslateWorker` — tradução opcional do texto revisado pra PT-BR
+  via Ollama, entre a etapa 1 e a etapa 2 (vídeos em outro idioma).
 - `RedubGenerateWorker` — narração de IA sincronizada + montagem do vídeo
-  final, a partir do texto (revisado pelo usuário) devolvido pela etapa 1.
+  final, a partir do texto (revisado/traduzido pelo usuário).
 
 Mesmo padrão do `PipelineWorker`/`VideoEditorWorker`: rodam em background,
 controlam pausa/cancelamento via `TaskControl` e entregam o progresso por
-sinais Qt.
+sinais Qt. `RedubTranslateWorker` é rápido o bastante pra não precisar de
+pausa/cancelamento.
 """
 from __future__ import annotations
 
@@ -65,6 +68,44 @@ class RedubPrepareWorker(QThread):
             self.failed.emit(str(exc))
         except Exception as exc:  # noqa: BLE001 - nunca derrubar a aplicação
             logger.exception("Erro inesperado na transcrição da redublagem.")
+            self.failed.emit(f"Erro inesperado: {exc}")
+
+
+class RedubTranslateWorker(QThread):
+    """Traduz o texto revisado da etapa 1 para PT-BR via Ollama, em
+    background — usado quando o vídeo original está em outro idioma."""
+
+    progressChanged = Signal(int, str)      # (percentual, mensagem)
+    succeeded = Signal(object)              # list[str], traduzido
+    failed = Signal(str)                    # mensagem de erro amigável
+
+    def __init__(self, settings: Settings, texts: list[str]) -> None:
+        super().__init__()
+        self._settings = settings
+        self._texts = texts
+
+    def cancel(self) -> None:
+        """Sem cancelamento no meio de um lote (chamada HTTP única e curta
+        ao Ollama); existe só para a MainWindow poder tratar este worker
+        como os outros ao fechar a janela (`closeEvent` força-termina se
+        não encerrar a tempo)."""
+
+    # -- execução -------------------------------------------------------- #
+    def run(self) -> None:  # noqa: D102 - QThread entry point
+        from src.ai.translator import translate_segments
+
+        s = self._settings
+        try:
+            translated = translate_segments(
+                self._texts, s.ollama_model, s.ollama_url,
+                progress=lambda pct, msg: self.progressChanged.emit(pct, msg),
+            )
+            self.succeeded.emit(translated)
+        except AutoShortsError as exc:
+            logger.error("Erro na tradução da redublagem: %s", exc)
+            self.failed.emit(str(exc))
+        except Exception as exc:  # noqa: BLE001 - nunca derrubar a aplicação
+            logger.exception("Erro inesperado na tradução da redublagem.")
             self.failed.emit(f"Erro inesperado: {exc}")
 
 

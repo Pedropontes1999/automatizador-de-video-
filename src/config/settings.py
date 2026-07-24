@@ -86,10 +86,17 @@ class Settings:
     channel_avatar_path: str = ""                # foto do canal
     channel_badge_position: str = "bottom"       # top | bottom
 
-    # --- Narração por IA (Piper, local/offline) ----------------------------
+    # --- Narração por IA (ElevenLabs, nuvem, paga) -------------------------
     tts_enabled: bool = False
     tts_text: str = ""                           # texto narrado no início do short
     tts_voice: str = C.TTS_DEFAULT_VOICE
+
+    # --- ElevenLabs (narração em nuvem, plano pago do usuário) -------------
+    # Chave de API da conta ElevenLabs (https://elevenlabs.io/app/settings/api-keys).
+    # Usada pelas vozes "eleven:<voice_id>" em qualquer campo de narração
+    # (ver TTS_VOICES/redub_voice) — sem ela essas vozes falham silenciosamente
+    # e o short/redublagem sai sem narração.
+    elevenlabs_api_key: str = ""
 
     # --- Editor de vídeo completo (aba Editor) -----------------------------
     # Abertura opcional aplicada antes do vídeo original (sem cortar em
@@ -106,11 +113,14 @@ class Settings:
 
     # --- Redublagem por IA (aba Redublagem) --------------------------------
     # Troca a voz do narrador de um vídeo já pronto por uma narração de IA,
-    # sincronizada por trecho, mantendo (opcionalmente) a música/efeitos de
-    # fundo originais via separação por IA (Demucs).
+    # sincronizada por trecho. O áudio original inteiro (voz + música/efeitos)
+    # é descartado — Demucs só isola a voz pra transcrever limpo (ver
+    # `redub_pipeline.py`) — e substituído por uma música de fundo escolhida
+    # pelo usuário, tocando em loop do início ao fim do vídeo (por pedido do
+    # usuário em 2026-07: antes mantinha a música/efeitos originais).
     redub_voice: str = C.TTS_DEFAULT_VOICE
-    redub_keep_background: bool = True
-    redub_background_volume: int = 70              # % do volume original
+    redub_music_path: str = ""                     # música de fundo em loop ("" = sem)
+    redub_music_volume: int = 20                   # %
 
     # --- Transcrição (aba Transcrição) --------------------------------------
     # Quando `transcript_auto_export` está ligado, os botões de exportar

@@ -304,6 +304,7 @@ class SimpleEditorPage(QWidget):
                 if self.narration_enabled.isChecked() else ""
             ),
             narration_voice=self.narration_voice.currentData(),
+            narration_api_key=self.settings.elevenlabs_api_key,
             narration_position=self.narration_position.currentData(),
             narration_time=self.narration_time.value(),
         )

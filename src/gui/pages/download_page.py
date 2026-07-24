@@ -1,6 +1,6 @@
 """Página Download: baixa um vídeo do YouTube (via link) para downloads/,
 sem nenhum processamento — só pra ter o arquivo local. De lá, dá pra mandar
-direto pro Editor Simples com um clique.
+direto pra Editar Shorts com um clique.
 """
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ class DownloadPage(QWidget):
         subtitle = QLabel(
             "Cole o link de um vídeo do YouTube (apenas vídeos autorizados por "
             "você) para baixar em MP4 na pasta downloads/. Depois é só mandar "
-            "direto pro Editor Simples, ou usar em qualquer outra aba."
+            "direto pra Editar Shorts, ou usar em qualquer outra aba."
         )
         subtitle.setObjectName("Muted")
         subtitle.setWordWrap(True)
@@ -70,7 +70,7 @@ class DownloadPage(QWidget):
         outer.addStretch()
 
         actions = QHBoxLayout()
-        self.editor_button = QPushButton("🎬 Editar no Editor Simples")
+        self.editor_button = QPushButton("🎬 Editar Shorts")
         self.editor_button.setVisible(False)
         self.editor_button.clicked.connect(self._send_to_editor)
         self.open_folder_button = QPushButton("📂 Abrir pasta")

@@ -17,8 +17,13 @@ def ensure_project_folders() -> None:
 
 def sanitize_filename(name: str, max_length: int = 80) -> str:
     """Remove caracteres inválidos para nomes de arquivo no Windows/Linux."""
-    clean = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", name).strip().rstrip(".")
-    return (clean or "video")[:max_length]
+    clean = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", name).strip()
+    # O corte por max_length precisa vir antes da limpeza final de bordas:
+    # cortar depois pode deixar espaço/ponto no final (Windows não aceita
+    # nomes de arquivo/pasta terminando em espaço ou ponto — e diferente do
+    # Explorer, o FFmpeg não normaliza isso ao abrir o arquivo).
+    clean = clean[:max_length].strip().rstrip(". ")
+    return clean or "video"
 
 
 def new_temp_dir(prefix: str = "job") -> Path:

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -81,6 +82,31 @@ class SettingsPage(QWidget):
         form.addRow("Modelo Ollama:", self.ollama_model)
         form.addRow("", refresh_models)
         form.addRow("", self.use_gpu)
+
+        # -- ElevenLabs (narração em nuvem) --------------------------------- #
+        form.addRow(self._section("🎙 ElevenLabs (narração em nuvem, plano pago)"))
+        key_row = QHBoxLayout()
+        self.elevenlabs_api_key = QLineEdit()
+        self.elevenlabs_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.elevenlabs_api_key.setPlaceholderText("Chave de API (elevenlabs.io/app/settings/api-keys)")
+        self.show_api_key = QPushButton("👁")
+        self.show_api_key.setCheckable(True)
+        self.show_api_key.setFixedWidth(32)
+        self.show_api_key.toggled.connect(
+            lambda show: self.elevenlabs_api_key.setEchoMode(
+                QLineEdit.EchoMode.Normal if show else QLineEdit.EchoMode.Password
+            )
+        )
+        key_row.addWidget(self.elevenlabs_api_key, stretch=1)
+        key_row.addWidget(self.show_api_key)
+        form.addRow("Chave de API:", key_row)
+        eleven_hint = QLabel(
+            "Use vozes \"eleven:...\" na Redublagem/Editor (botão \"Detectar "
+            "vozes\") depois de colar a chave aqui e salvar."
+        )
+        eleven_hint.setObjectName("Muted")
+        eleven_hint.setWordWrap(True)
+        form.addRow("", eleven_hint)
 
         # -- Legendas ----------------------------------------------------- #
         form.addRow(self._section("💬 Legendas"))
@@ -165,6 +191,7 @@ class SettingsPage(QWidget):
         self.ollama_model.addItems(list(C.OLLAMA_SUGGESTED_MODELS))
         self.ollama_model.setCurrentText(s.ollama_model)
         self.use_gpu.setChecked(s.use_gpu)
+        self.elevenlabs_api_key.setText(s.elevenlabs_api_key)
         self.subtitles_enabled.setChecked(s.subtitles_enabled)
         self.subtitle_style.setCurrentText(s.subtitle_style)
         fmt_index = self.output_format.findData(s.output_format)
@@ -194,6 +221,7 @@ class SettingsPage(QWidget):
         s.whisper_model = self.whisper_model.currentText()
         s.ollama_model = self.ollama_model.currentText().strip()
         s.use_gpu = self.use_gpu.isChecked()
+        s.elevenlabs_api_key = self.elevenlabs_api_key.text().strip()
         s.subtitles_enabled = self.subtitles_enabled.isChecked()
         s.subtitle_style = self.subtitle_style.currentText()
         s.output_format = self.output_format.currentData()

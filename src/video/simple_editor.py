@@ -35,6 +35,7 @@ class EditOptions:
     music_volume: int = 20           # %
     narration_text: str = ""
     narration_voice: str = ""
+    narration_api_key: str = ""        # chave da ElevenLabs (Settings.elevenlabs_api_key)
     narration_position: str = "start"  # start | custom | end
     narration_time: float = 0.0        # segundos do vídeo (só quando "custom")
 
@@ -82,6 +83,7 @@ def edit_video(
         tts_path = tts.synthesize(
             options.narration_text, options.narration_voice,
             workdir / "narracao.mp3",
+            api_key=options.narration_api_key,
         )
         if tts_path is not None:
             tts_seconds = tts.audio_duration(tts_path)

@@ -2,7 +2,7 @@
 
 Aqui o usuário define o "preset" aplicado automaticamente a todo corte
 exportado: marca d'água, texto de gancho, "Parte X", barra de progresso,
-música de fundo e narração (voz local XTTS, offline).
+música de fundo e narração (voz ElevenLabs, nuvem).
 """
 from __future__ import annotations
 

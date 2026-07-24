@@ -2,7 +2,7 @@
 
 Etapas:
 1. (opcional) Download do YouTube (yt-dlp)
-2. Narração por IA no início (Piper) — opcional
+2. Narração por IA no início (ElevenLabs) — opcional
 3. Transição de estática de TV — opcional
 4. Concatena a abertura (narração + estática) com o vídeo original e exporta
    um único MP4, preservando o formato/resolução de origem.
@@ -82,6 +82,7 @@ class VideoEditPipeline:
             narration_audio = synthesize(
                 s.editor_narration_text, s.editor_narration_voice,
                 temp_dir / "narracao.mp3",
+                api_key=s.elevenlabs_api_key,
             )
             if narration_audio is not None:
                 duration = audio_duration(narration_audio)

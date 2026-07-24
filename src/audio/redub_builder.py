@@ -31,11 +31,11 @@ def _silence_clip(duration: float, output: Path) -> Path:
 
 def _segment_clip(
     text: str, voice: str, target_duration: float, workdir: Path, tag: str,
-    voice_reference: str | None = None,
+    api_key: str = "",
 ) -> tuple[Path, float] | None:
     """Sintetiza a fala do trecho e ajusta a velocidade pra caber (aprox.)
     no tempo original. Retorna (caminho, duração real após o ajuste)."""
-    raw = synthesize(text, voice, workdir / f"{tag}_raw.mp3", voice_reference=voice_reference)
+    raw = synthesize(text, voice, workdir / f"{tag}_raw.mp3", api_key=api_key)
     if raw is None:
         return None
     raw_duration = audio_duration(raw)
@@ -52,8 +52,7 @@ def _segment_clip(
 
 
 def build_narration_track(
-    segments: list[TranscriptSegment], voice: str, workdir: Path,
-    voice_reference: str | None = None,
+    segments: list[TranscriptSegment], voice: str, workdir: Path, api_key: str = "",
 ) -> Path:
     """Gera uma trilha de narração de IA contínua, sincronizada por trecho.
 
@@ -73,10 +72,7 @@ def build_narration_track(
         if gap > 0.02:
             pieces.append(_silence_clip(gap, workdir / f"gap_{i:04d}.wav"))
             cursor += gap
-        result = _segment_clip(
-            text, voice, seg.duration, workdir, f"seg_{i:04d}",
-            voice_reference=voice_reference,
-        )
+        result = _segment_clip(text, voice, seg.duration, workdir, f"seg_{i:04d}", api_key=api_key)
         if result is None:
             logger.warning("Narração do trecho %d falhou; seguindo sem ele.", i)
             continue
@@ -88,18 +84,28 @@ def build_narration_track(
     return concat_same_encoding(pieces, workdir / "narracao_completa.wav", workdir)
 
 
+def _escape_path(path: str | Path) -> str:
+    """Escapa um caminho Windows para dentro de filtros FFmpeg."""
+    return str(path).replace("\\", "\\\\").replace(":", "\\:")
+
+
 def mux_final_audio(
     video_path: str | Path,
     narration_track: str | Path,
-    background_track: str | Path | None,
+    music_path: str | Path | None,
     output: str | Path,
     duration: float,
-    background_volume: int = 70,
+    music_volume: int = 20,
     use_gpu: bool = True,
     crf: int = 20,
 ) -> Path:
-    """Troca a trilha de áudio do vídeo original pela narração de IA (+
-    música/efeitos de fundo opcionais).
+    """Troca a trilha de áudio do vídeo original pela narração de IA + uma
+    música de fundo em loop escolhida pelo usuário.
+
+    O áudio original do vídeo (voz antiga + música/efeitos) é sempre
+    descartado por completo — não só a voz. Se `music_path` for informado,
+    ela toca em loop do início ao fim do vídeo (repete se for mais curta,
+    corta se for mais longa); sem música, sobra só a narração nova.
 
     O vídeo é sempre reencodado para H.264 (GPU quando disponível, senão
     CPU) em vez de copiado (`-c:v copy`): o vídeo de origem pode vir em
@@ -108,13 +114,16 @@ def mux_final_audio(
     """
     output = Path(output)
     inputs = ["-i", str(video_path), "-i", str(narration_track)]
-    if background_track is not None:
-        vol = max(0.0, min(background_volume / 100.0, 1.5))
-        inputs += ["-i", str(background_track)]
+    if music_path is not None:
+        vol = max(0.0, min(music_volume / 100.0, 1.5))
+        # loop=0 repete a música indefinidamente; amix com duration=first
+        # (a narração, já com duração fixa abaixo) corta a música bem no
+        # fim do vídeo, sem precisar saber a duração dela de antemão.
         audio_graph = (
-            f"[1:a]volume=1.0[narr];[2:a]volume={vol:.2f}[bg];"
-            f"[narr][bg]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,"
-            f"apad,atrim=0:{duration:.3f},asetpts=N/SR/TB[aout]"
+            f"[1:a]apad,atrim=0:{duration:.3f},asetpts=N/SR/TB[narr];"
+            f"amovie='{_escape_path(music_path)}':loop=0,"
+            f"asetpts=N/SR/TB,aresample=48000,volume={vol:.2f}[bgm];"
+            f"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
         )
     else:
         audio_graph = f"[1:a]apad,atrim=0:{duration:.3f},asetpts=N/SR/TB[aout]"

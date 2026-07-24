@@ -23,16 +23,9 @@ requests>=2.32.0
 # Exportação de transcrição (aba Transcrição) em .docx
 python-docx>=1.1.0
 
-# Narração por IA (XTTS v2/Coqui, local/offline - baixa o modelo, ~1.9GB,
-# na 1a execução; pesado, ~10-12s por trecho na CPU, mas voz bem mais
-# natural que engines mais leves)
-coqui-tts[codec]>=0.27.0
-torchaudio>=2.3.0
-transformers>=4.57,<5
-
-# Narração por IA (Microsoft Edge TTS - nuvem, grátis, sem chave de API;
-# precisa de internet, mas é rápido e não precisa de GPU nem de modelo local)
-edge-tts>=6.1.0
+# Narração por IA: ElevenLabs (nuvem, paga - usa só `requests`, já listado
+# acima; chave em Configurações). Motores locais antigos (XTTS/Coqui, Edge
+# TTS) foram removidos.
 
 # Separação de voz/música (Redublagem) - baixa modelo pré-treinado na 1a execução
 demucs>=4.1.0

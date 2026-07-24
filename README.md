@@ -46,7 +46,7 @@ ollama serve                  # deixe o Ollama rodando
 python main.py
 ```
 
-Atalhos: `Ctrl+O` abrir vídeo • `Ctrl+Enter` analisar • `Ctrl+S` salvar configurações.
+Atalho: `Ctrl+S` salva a página aberta (Redublagem).
 
 Os Shorts finais ficam em `output/<nome do vídeo>/`, junto com `transcricao.json` e `cortes.json`.
 
@@ -76,8 +76,8 @@ AUTO-SHORTS-AI/
 
 ## Interface
 
-- Tema escuro estilo Discord (tema claro disponível em Configurações);
-- Sidebar: **Início · Dashboard · Histórico · Configurações**;
+- Tema escuro estilo Discord;
+- Sidebar: **Editar Shorts · Download · Redublagem**;
 - Barra de progresso + logs em tempo real;
 - Cards de cada corte com título, nota viral, hashtags e botão para abrir o MP4;
 - Dashboard com uso de CPU/GPU/RAM, contagem de cortes e tempo economizado;
