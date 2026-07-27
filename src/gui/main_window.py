@@ -1,12 +1,13 @@
 """Janela principal do AUTO SHORTS AI.
 
-Estrutura: sidebar (esquerda) + QStackedWidget com as 3 páginas mantidas na
+Estrutura: sidebar (esquerda) + QStackedWidget com as 4 páginas mantidas na
 navegação — Editar Shorts (remoção de marca d'água + Modo Humanizado),
-Download e Redublagem. As demais páginas do projeto (Início/cortes por IA,
-Dashboard, Histórico, Transcrição, Editor, Editor Simples, Cortar Vídeo,
-Estilo, Configurações) continuam existindo no código, só não estão
-conectadas na navegação — por pedido do usuário em 2026-07, pra simplificar
-o app ao fluxo que ele realmente usa.
+Download, Redublagem e Marca d'Água (adiciona imagem/texto sobre um vídeo).
+As demais páginas do projeto (Início/cortes por IA, Dashboard, Histórico,
+Transcrição, Editor, Editor Simples, Cortar Vídeo, Estilo, Configurações)
+continuam existindo no código, só não estão conectadas na navegação — por
+pedido do usuário em 2026-07, pra simplificar o app ao fluxo que ele
+realmente usa.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import QHBoxLayout, QMessageBox, QStackedWidget, QWidget
 from src.config.settings import Settings
 from src.gui.pages.download_page import DownloadPage
 from src.gui.pages.redub_page import RedubPage
+from src.gui.pages.watermark_add_page import WatermarkAddPage
 from src.gui.pages.watermark_page import WatermarkPage
 from src.gui.theme import build_stylesheet
 from src.gui.widgets.sidebar import Sidebar
@@ -79,7 +81,8 @@ class MainWindow(QWidget):
         self.watermark_page = WatermarkPage(self.settings)
         self.download_page = DownloadPage()
         self.redub = RedubPage(self.settings)
-        for page in (self.watermark_page, self.download_page, self.redub):
+        self.watermark_add_page = WatermarkAddPage(self.settings)
+        for page in (self.watermark_page, self.download_page, self.redub, self.watermark_add_page):
             self.pages.addWidget(page)
         root.addWidget(self.pages, stretch=1)
 
@@ -287,4 +290,16 @@ class MainWindow(QWidget):
             if not self.download_page.wait_running_worker(8000):
                 logger.warning("Download não respondeu ao fechar; terminando.")
                 self.download_page.terminate_running_worker()
+
+        if self.watermark_add_page.is_running():
+            answer = QMessageBox.question(
+                self, "Sair",
+                "Há uma marca d'água sendo aplicada. Cancelar e sair?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+            if not self.watermark_add_page.wait_running_worker(8000):
+                logger.warning("Marca d'água não respondeu ao fechar; terminando.")
+                self.watermark_add_page.terminate_running_worker()
         event.accept()

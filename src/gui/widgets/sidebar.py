@@ -15,6 +15,7 @@ class Sidebar(QWidget):
         ("🪄", "Editar Shorts"),
         ("⬇️", "Download"),
         ("🗣️", "Redublagem"),
+        ("💧", "Marca d'água"),
     )
 
     def __init__(self) -> None:

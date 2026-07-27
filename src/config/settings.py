@@ -176,6 +176,17 @@ class Settings:
     simple_editor_narration_position: str = "start"     # start | custom | end
     simple_editor_narration_time: float = 0.0           # segundos (só quando "custom")
 
+    # --- Marca d'Água (aba Marca d'Água, aplica sobre um vídeo inteiro) ----
+    # Cola uma imagem OU um texto por cima do vídeo, na posição escolhida —
+    # o oposto da aba "Editar Shorts" (que remove/cobre uma marca existente).
+    add_watermark_mode: str = "image"            # "image" | "text"
+    add_watermark_image_path: str = ""
+    add_watermark_text: str = ""
+    add_watermark_font_size: int = 48            # px (modo texto)
+    add_watermark_position: str = "bottom-right"
+    add_watermark_size: int = 12                 # % da largura do vídeo (modo imagem)
+    add_watermark_opacity: int = 70              # %
+
     # --- Interface --------------------------------------------------------
     theme: str = "dark"
     parallel_exports: int = 2

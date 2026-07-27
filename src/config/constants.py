@@ -33,10 +33,13 @@ TRIM_OUTPUT_DIR: Path = OUTPUT_DIR / "cortados"
 # Vídeos com marca d'água removida na aba Remover Marca d'Água.
 WATERMARK_OUTPUT_DIR: Path = OUTPUT_DIR / "sem_marca"
 
+# Vídeos com marca d'água adicionada na aba Marca d'Água.
+WATERMARK_ADD_OUTPUT_DIR: Path = OUTPUT_DIR / "com_marca"
+
 REQUIRED_FOLDERS: tuple[Path, ...] = (
     LOGS_DIR, TEMP_DIR, CACHE_DIR, OUTPUT_DIR, DOWNLOADS_DIR,
     ASSETS_DIR, FONTS_DIR, ICONS_DIR, EDITOR_OUTPUT_DIR, TRIM_OUTPUT_DIR,
-    WATERMARK_OUTPUT_DIR,
+    WATERMARK_OUTPUT_DIR, WATERMARK_ADD_OUTPUT_DIR,
 )
 
 # ---------------------------------------------------------------------------
@@ -110,6 +113,17 @@ ANIME_FRAMING: dict[str, str] = {
 WATERMARK_POSITIONS: dict[str, str] = {
     "top-left": "Canto superior esquerdo",
     "top-right": "Canto superior direito",
+    "bottom-left": "Canto inferior esquerdo",
+    "bottom-right": "Canto inferior direito",
+}
+
+# Posições da aba Marca d'Água: os 4 cantos + centro da tela. Separado de
+# WATERMARK_POSITIONS (Estilo/Editor Simples) para não adicionar "centro"
+# nesses outros formulários sem pedido do usuário.
+ADD_WATERMARK_POSITIONS: dict[str, str] = {
+    "top-left": "Canto superior esquerdo",
+    "top-right": "Canto superior direito",
+    "center": "Centro da tela",
     "bottom-left": "Canto inferior esquerdo",
     "bottom-right": "Canto inferior direito",
 }
