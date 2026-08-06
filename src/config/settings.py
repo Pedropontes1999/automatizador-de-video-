@@ -98,6 +98,12 @@ class Settings:
     # e o short/redublagem sai sem narração.
     elevenlabs_api_key: str = ""
 
+    # --- Chatterbox (narração local, grátis) -------------------------------
+    # Áudio de referência (poucos segundos, fala limpa, sem música/ruído) pra
+    # clonar uma voz com a voz "chatterbox:custom" (ver TTS_VOICES). Baixa o
+    # modelo na 1a execução; sem GPU, a síntese fica bem mais lenta.
+    chatterbox_reference_path: str = ""
+
     # --- Editor de vídeo completo (aba Editor) -----------------------------
     # Abertura opcional aplicada antes do vídeo original (sem cortar em
     # Shorts): narração por IA e/ou transição de estática de TV.

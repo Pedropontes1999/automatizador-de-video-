@@ -1,10 +1,11 @@
-"""Narração por IA via ElevenLabs (nuvem, paga; chave em
-`Settings.elevenlabs_api_key`).
+"""Narração por IA: ElevenLabs (nuvem, paga; chave em
+`Settings.elevenlabs_api_key`) ou Chatterbox (local, grátis; ver
+`src/audio/chatterbox_tts.py`).
 
-Motor único por escolha do usuário em 2026-07 ao assinar um plano pago —
-os motores anteriores (Piper, XTTS v2/Coqui, Microsoft Edge TTS) foram
-removidos, não só desativados. Fixada em uma única voz da conta do usuário
-(ver `TTS_VOICES`).
+ElevenLabs foi o motor único por escolha do usuário em 2026-07 ao assinar
+um plano pago — os motores locais de então (Piper, XTTS v2/Coqui, Microsoft
+Edge TTS) foram removidos. Chatterbox entrou em 2026-08 como 2º motor, pra
+comparar qualidade sem custo por caractere (ver `TTS_VOICES`).
 """
 from __future__ import annotations
 
@@ -45,13 +46,39 @@ def _synthesize_elevenlabs(text: str, voice_id: str, api_key: str, output_path: 
         mp3_path.unlink(missing_ok=True)
 
 
+def _synthesize_chatterbox(
+    text: str, voice_key: str, reference_audio: str, use_gpu: bool, output_path: Path,
+) -> None:
+    from src.audio.chatterbox_tts import synthesize_chatterbox
+
+    ref = reference_audio if voice_key == "custom" else None
+    if voice_key == "custom" and not ref:
+        raise RuntimeError(
+            "Voz personalizada do Chatterbox sem áudio de referência "
+            "configurado (Configurações)."
+        )
+    raw_path = output_path.with_suffix(".chatterbox.wav")
+    try:
+        synthesize_chatterbox(text, ref, raw_path, use_gpu=use_gpu)
+        ffmpeg_utils.run_ffmpeg(["-i", str(raw_path), "-ar", "48000", "-ac", "2", str(output_path)])
+    finally:
+        raw_path.unlink(missing_ok=True)
+
+
 def synthesize(
     text: str, voice: str, output_path: str | Path, api_key: str = "",
+    reference_audio: str = "", use_gpu: bool = True,
 ) -> Path | None:
-    """Gera o áudio (WAV) da narração para o texto dado via ElevenLabs.
+    """Gera o áudio (WAV) da narração para o texto dado.
 
     Args:
+        voice: motor + identificador da voz (`"eleven:<voice_id>"` ou
+            `"chatterbox:default"`/`"chatterbox:custom"`, ver `TTS_VOICES`).
         api_key: chave de API da ElevenLabs (`Settings.elevenlabs_api_key`).
+        reference_audio: clipe de referência pra clonagem de voz do
+            Chatterbox (`Settings.chatterbox_reference_path`); ignorado com
+            voice="eleven:...".
+        use_gpu: usa GPU (se disponível) pra rodar o modelo do Chatterbox.
 
     Returns:
         Caminho do WAV gerado, ou None se a síntese falhou.
@@ -61,9 +88,14 @@ def synthesize(
         return None
     output_path = Path(output_path).with_suffix(".wav")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    _, _, voice_id = voice.partition(":")
+    engine, _, voice_key = voice.partition(":")
     try:
-        _synthesize_elevenlabs(text, voice_id, api_key, output_path)
+        if engine == "eleven":
+            _synthesize_elevenlabs(text, voice_key, api_key, output_path)
+        elif engine == "chatterbox":
+            _synthesize_chatterbox(text, voice_key, reference_audio, use_gpu, output_path)
+        else:
+            raise RuntimeError(f"Motor de narração desconhecido: {engine!r}")
     except Exception as exc:  # noqa: BLE001 - nunca derrubar o pipeline por isso
         logger.warning("Narração indisponível (%s). Short sairá sem ela.", exc)
         return None

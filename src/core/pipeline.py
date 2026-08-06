@@ -226,6 +226,8 @@ class ShortsPipeline:
                 self.settings.tts_text, self.settings.tts_voice,
                 temp_dir / "narracao.mp3",
                 api_key=self.settings.elevenlabs_api_key,
+                reference_audio=self.settings.chatterbox_reference_path,
+                use_gpu=self.settings.use_gpu,
             )
             if tts_path is not None:
                 tts_seconds = audio_duration(tts_path)

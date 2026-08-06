@@ -9,6 +9,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -108,6 +109,34 @@ class SettingsPage(QWidget):
         eleven_hint.setWordWrap(True)
         form.addRow("", eleven_hint)
 
+        # -- Chatterbox (narração local, grátis) --------------------------- #
+        form.addRow(self._section("🗣 Chatterbox (narração local, grátis)"))
+        ref_row = QHBoxLayout()
+        self.chatterbox_reference_path = QLineEdit()
+        self.chatterbox_reference_path.setReadOnly(True)
+        self.chatterbox_reference_path.setPlaceholderText(
+            "Nenhum áudio de referência escolhido (usa a voz padrão do Chatterbox)"
+        )
+        choose_ref = QPushButton("📂 Escolher...")
+        choose_ref.clicked.connect(self._pick_chatterbox_reference)
+        clear_ref = QPushButton("✖")
+        clear_ref.setToolTip("Remover")
+        clear_ref.setFixedWidth(36)
+        clear_ref.clicked.connect(lambda: self.chatterbox_reference_path.setText(""))
+        ref_row.addWidget(self.chatterbox_reference_path, stretch=1)
+        ref_row.addWidget(choose_ref)
+        ref_row.addWidget(clear_ref)
+        form.addRow("Áudio de referência:", ref_row)
+        chatterbox_hint = QLabel(
+            "Roda no seu computador, sem chave de API. Escolha um clipe curto "
+            "(5-15s, fala limpa, sem música/ruído) pra usar a voz \"Personalizada "
+            "(Chatterbox)\" na Redublagem/Editor — sem escolher nada, essa opção "
+            "usa a voz embutida padrão do modelo."
+        )
+        chatterbox_hint.setObjectName("Muted")
+        chatterbox_hint.setWordWrap(True)
+        form.addRow("", chatterbox_hint)
+
         # -- Legendas ----------------------------------------------------- #
         form.addRow(self._section("💬 Legendas"))
         self.subtitles_enabled = QCheckBox("Gerar legendas automaticamente")
@@ -177,6 +206,14 @@ class SettingsPage(QWidget):
         label.setObjectName("SectionTitle")
         return label
 
+    def _pick_chatterbox_reference(self) -> None:
+        patterns = " ".join(f"*{ext}" for ext in C.SUPPORTED_AUDIO_EXTENSIONS)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Escolher áudio de referência", "", f"Áudios/Vídeos ({patterns})",
+        )
+        if path:
+            self.chatterbox_reference_path.setText(path)
+
     # ------------------------------------------------------------------ #
     def _load_values(self) -> None:
         """Preenche o formulário com os valores atuais de Settings."""
@@ -192,6 +229,7 @@ class SettingsPage(QWidget):
         self.ollama_model.setCurrentText(s.ollama_model)
         self.use_gpu.setChecked(s.use_gpu)
         self.elevenlabs_api_key.setText(s.elevenlabs_api_key)
+        self.chatterbox_reference_path.setText(s.chatterbox_reference_path)
         self.subtitles_enabled.setChecked(s.subtitles_enabled)
         self.subtitle_style.setCurrentText(s.subtitle_style)
         fmt_index = self.output_format.findData(s.output_format)
@@ -222,6 +260,7 @@ class SettingsPage(QWidget):
         s.ollama_model = self.ollama_model.currentText().strip()
         s.use_gpu = self.use_gpu.isChecked()
         s.elevenlabs_api_key = self.elevenlabs_api_key.text().strip()
+        s.chatterbox_reference_path = self.chatterbox_reference_path.text().strip()
         s.subtitles_enabled = self.subtitles_enabled.isChecked()
         s.subtitle_style = self.subtitle_style.currentText()
         s.output_format = self.output_format.currentData()

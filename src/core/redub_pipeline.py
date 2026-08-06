@@ -36,6 +36,54 @@ from src.video.downloader import download_video, is_youtube_url
 
 logger = get_logger("redub")
 
+# Junta fragmentos consecutivos do Whisper numa frase só antes de mostrar
+# pro usuário revisar e de sintetizar: o Whisper quebra "trecho" por pausa
+# de respiração/áudio no idioma original, não por fim de frase em
+# português — sintetizar cada fragmento separado (uma chamada de TTS por
+# trecho) faz a narração sair com um corte/pausa artificial no meio da
+# frase, mesmo quando o texto reescrito lê como uma frase só. Só NÃO junta
+# quando o fragmento já termina em pontuação de fim de frase, quando o
+# próximo começa depois de uma pausa real longa (provável troca de cena/
+# assunto no vídeo original) ou quando a frase acumulada já ficou longa
+# demais (evita um único trecho gigante, difícil de sincronizar).
+_SENTENCE_END_CHARS = ".!?…"
+_MERGE_MAX_GAP_SECONDS = 1.2
+_MERGE_MAX_DURATION_SECONDS = 12.0
+
+
+def _combine_segments(segs: list[TranscriptSegment]) -> TranscriptSegment:
+    return TranscriptSegment(
+        index=segs[0].index,
+        text=" ".join(seg.text.strip() for seg in segs),
+        start=segs[0].start,
+        end=segs[-1].end,
+        words=[word for seg in segs for word in seg.words],
+        no_speech_prob=max(seg.no_speech_prob for seg in segs),
+        avg_logprob=min(seg.avg_logprob for seg in segs),
+        compression_ratio=max(seg.compression_ratio for seg in segs),
+    )
+
+
+def _merge_into_sentences(segments: list[TranscriptSegment]) -> list[TranscriptSegment]:
+    """Ver comentário acima das constantes `_MERGE_*`."""
+    merged: list[TranscriptSegment] = []
+    buffer: list[TranscriptSegment] = []
+    for seg in segments:
+        if buffer:
+            gap = seg.start - buffer[-1].end
+            duration = seg.end - buffer[0].start
+            if gap > _MERGE_MAX_GAP_SECONDS or duration > _MERGE_MAX_DURATION_SECONDS:
+                merged.append(_combine_segments(buffer))
+                buffer = []
+        buffer.append(seg)
+        stripped = seg.text.strip()
+        if stripped and stripped[-1] in _SENTENCE_END_CHARS:
+            merged.append(_combine_segments(buffer))
+            buffer = []
+    if buffer:
+        merged.append(_combine_segments(buffer))
+    return [replace(seg, index=i) for i, seg in enumerate(merged)]
+
 
 @dataclass
 class RedubCallbacks:
@@ -128,6 +176,14 @@ class RedubPipeline:
             raise AutoShortsError(
                 "Não foi possível identificar falas nesse vídeo."
             )
+        raw_count = len(segments)
+        segments = _merge_into_sentences(segments)
+        if len(segments) != raw_count:
+            logger.info(
+                "%d fragmento(s) do Whisper agrupado(s) em %d frase(s) "
+                "(evita pausas artificiais na narração nova).",
+                raw_count, len(segments),
+            )
         control.checkpoint()
 
         cb.on_progress(100, "Transcrição pronta — revise o texto antes de gerar a nova voz.")
@@ -159,6 +215,7 @@ class RedubPipeline:
         cb.on_progress(10, "Gerando a nova narração por IA (sincronizada por trecho)...")
         narration_track = build_narration_track(
             segments, s.redub_voice, preparation.temp_dir, api_key=s.elevenlabs_api_key,
+            reference_audio=s.chatterbox_reference_path, use_gpu=s.use_gpu,
         )
         control.checkpoint()
 

@@ -83,6 +83,8 @@ class VideoEditPipeline:
                 s.editor_narration_text, s.editor_narration_voice,
                 temp_dir / "narracao.mp3",
                 api_key=s.elevenlabs_api_key,
+                reference_audio=s.chatterbox_reference_path,
+                use_gpu=s.use_gpu,
             )
             if narration_audio is not None:
                 duration = audio_duration(narration_audio)

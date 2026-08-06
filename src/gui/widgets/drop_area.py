@@ -13,12 +13,20 @@ from src.config.constants import SUPPORTED_VIDEO_EXTENSIONS
 
 
 class DropArea(QWidget):
-    """Widget drag & drop que emite o caminho do vídeo selecionado."""
+    """Widget drag & drop que emite o(s) caminho(s) do(s) vídeo(s) selecionado(s).
+
+    Por padrão aceita um único arquivo (``fileSelected``). Com
+    ``multiple=True``, o clique abre um seletor multi-arquivo e o drop aceita
+    vários arquivos de uma vez, emitindo ``filesSelected`` com a lista
+    completa (além de ``fileSelected`` com o primeiro, por compatibilidade).
+    """
 
     fileSelected = Signal(str)
+    filesSelected = Signal(list)
 
-    def __init__(self) -> None:
+    def __init__(self, multiple: bool = False) -> None:
         super().__init__()
+        self._multiple = multiple
         self.setObjectName("DropArea")
         self.setAcceptDrops(True)
         self.setMinimumHeight(150)
@@ -29,7 +37,12 @@ class DropArea(QWidget):
         icon = QLabel("📂")
         icon.setStyleSheet("font-size: 40px; background: transparent;")
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        text = QLabel("Arraste um vídeo aqui\nou clique para selecionar")
+        message = (
+            "Arraste um ou mais vídeos aqui\nou clique para selecionar"
+            if multiple
+            else "Arraste um vídeo aqui\nou clique para selecionar"
+        )
+        text = QLabel(message)
         text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         text.setStyleSheet("background: transparent;")
         layout.addWidget(icon)
@@ -39,17 +52,24 @@ class DropArea(QWidget):
     def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt API)
         """Abre o seletor de arquivos ao clicar na área."""
         patterns = " ".join(f"*{ext}" for ext in SUPPORTED_VIDEO_EXTENSIONS)
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Selecionar vídeo", "", f"Vídeos ({patterns})",
-        )
-        if path:
-            self.fileSelected.emit(path)
+        if self._multiple:
+            paths, _ = QFileDialog.getOpenFileNames(
+                self, "Selecionar vídeos", "", f"Vídeos ({patterns})",
+            )
+            if paths:
+                self._emit(paths)
+        else:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Selecionar vídeo", "", f"Vídeos ({patterns})",
+            )
+            if path:
+                self._emit([path])
         super().mousePressEvent(event)
 
     # -- drag & drop ------------------------------------------------------ #
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
         """Aceita apenas arquivos de vídeo suportados."""
-        if self._extract_video(event) is not None:
+        if self._extract_videos(event):
             self.setProperty("dragActive", True)
             self._refresh_style()
             event.acceptProposedAction()
@@ -60,24 +80,31 @@ class DropArea(QWidget):
         super().dragLeaveEvent(event)
 
     def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
-        """Emite o caminho do vídeo solto na área."""
+        """Emite o(s) caminho(s) do(s) vídeo(s) solto(s) na área."""
         self.setProperty("dragActive", False)
         self._refresh_style()
-        path = self._extract_video(event)
-        if path is not None:
-            self.fileSelected.emit(str(path))
+        paths = self._extract_videos(event)
+        if paths:
+            self._emit([str(p) for p in paths] if self._multiple else [str(paths[0])])
+
+    def _emit(self, paths: list[str]) -> None:
+        if not paths:
+            return
+        self.fileSelected.emit(paths[0])
+        self.filesSelected.emit(paths)
 
     @staticmethod
-    def _extract_video(event) -> Path | None:
-        """Retorna o primeiro arquivo de vídeo válido do evento (ou None)."""
+    def _extract_videos(event) -> list[Path]:
+        """Retorna os arquivos de vídeo válidos do evento."""
         mime = event.mimeData()
         if not mime.hasUrls():
-            return None
+            return []
+        paths = []
         for url in mime.urls():
             path = Path(url.toLocalFile())
             if path.suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS:
-                return path
-        return None
+                paths.append(path)
+        return paths
 
     def _refresh_style(self) -> None:
         """Força a reavaliação do QSS após mudar a propriedade dragActive."""

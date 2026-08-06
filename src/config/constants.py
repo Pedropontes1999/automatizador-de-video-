@@ -134,20 +134,29 @@ SUPPORTED_AUDIO_EXTENSIONS: tuple[str, ...] = (
 )
 
 # ---------------------------------------------------------------------------
-# Narração (TTS via ElevenLabs — nuvem, paga)
+# Narração (TTS via ElevenLabs — nuvem, paga — ou Chatterbox — local, grátis)
 # ---------------------------------------------------------------------------
-# Único motor de narração do app (ver `src/audio/tts.py`) por escolha do
-# usuário em 2026-07 ao assinar um plano pago — os motores anteriores
-# (Piper, XTTS v2/Coqui, Microsoft Edge TTS) foram removidos. Fixada nessa
-# única voz (Lax, afinada para PT-BR); precisa de `elevenlabs_api_key`
-# configurada (Configurações) e de plano pago ativo na conta.
+# ElevenLabs foi o único motor por escolha do usuário em 2026-07 ao assinar
+# um plano pago (os motores locais de então — Piper, XTTS v2/Coqui, Microsoft
+# Edge TTS — foram removidos). Em 2026-08 o Chatterbox Multilingual (Resemble
+# AI, open-source/MIT, https://github.com/resemble-ai/chatterbox) entrou como
+# 2º motor pra comparar qualidade sem custo por caractere: roda localmente
+# (`src/audio/chatterbox_tts.py`), sem precisar de chave de API. As 3 vozes
+# ElevenLabs continuam fixas (Lax, Yuri, Nassif); precisam de
+# `elevenlabs_api_key` configurada (Configurações) e de plano pago ativo na
+# conta. A voz "Personalizada" do Chatterbox clona a partir do áudio de
+# referência em `Settings.chatterbox_reference_path`.
 TTS_VOICES: dict[str, str] = {
     "eleven:tS45q0QcrDHqHoaWdCDR": "Lax (ElevenLabs, PT-BR)",
     "eleven:WSBwiRQRmi2mEG7BfKwS": "Yuri (ElevenLabs, PT-BR)",
     "eleven:ulzsiMeCbfKyTPCNhCD5": "Nassif (ElevenLabs, PT-BR)",
+    "chatterbox:default": "Padrão (Chatterbox, grátis, local)",
+    "chatterbox:custom": "Personalizada (Chatterbox, grátis — defina o áudio de referência em Configurações)",
 }
 TTS_DEFAULT_VOICE: str = "eleven:tS45q0QcrDHqHoaWdCDR"
 ELEVENLABS_MODEL_ID: str = "eleven_multilingual_v2"
+CHATTERBOX_LANGUAGE: str = "pt"
+VOICE_PREVIEW_TEXT: str = "Olá! Este é um teste da voz selecionada para a narração."
 
 # ---------------------------------------------------------------------------
 # Legendas

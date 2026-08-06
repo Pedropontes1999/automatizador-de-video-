@@ -10,7 +10,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QButtonGroup,
     QComboBox,
     QFileDialog,
@@ -18,6 +20,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -48,7 +52,11 @@ class WatermarkAddPage(QWidget):
     def __init__(self, settings: Settings) -> None:
         super().__init__()
         self.settings = settings
-        self._source: str | None = None
+        self._pending: list[str] = []
+        self._current_source: str | None = None
+        self._total_in_batch = 0
+        self._done_in_batch = 0
+        self._failures: list[str] = []
         self._worker: WatermarkAdderWorker | None = None
         self._last_output: str | None = None
         self._build_ui()
@@ -64,20 +72,35 @@ class WatermarkAddPage(QWidget):
         title.setObjectName("SectionTitle")
         outer.addWidget(title)
         subtitle = QLabel(
-            "Envie um vídeo, escolha uma imagem (ex.: logo do seu canal) ou "
-            "digite um texto, e escolha onde ela aparece. O vídeo sai inteiro, "
-            "do jeito que entrou, só com a marca d'água por cima."
+            "Envie um ou mais vídeos, escolha uma imagem (ex.: logo do seu canal) "
+            "ou digite um texto, e escolha onde ela aparece. Os vídeos saem "
+            "inteiros, do jeito que entraram, só com a marca d'água por cima. "
+            "As mesmas opções são aplicadas a todos os vídeos da fila."
         )
         subtitle.setObjectName("Muted")
         subtitle.setWordWrap(True)
         outer.addWidget(subtitle)
 
-        self.drop_area = DropArea()
-        self.drop_area.fileSelected.connect(self.set_source)
+        self.drop_area = DropArea(multiple=True)
+        self.drop_area.filesSelected.connect(self.add_sources)
         outer.addWidget(self.drop_area)
-        self.source_label = QLabel("Nenhum vídeo selecionado.")
-        self.source_label.setObjectName("Muted")
-        outer.addWidget(self.source_label)
+
+        queue_row = QHBoxLayout()
+        self.queue_label = QLabel("Nenhum vídeo na fila.")
+        self.queue_label.setObjectName("Muted")
+        queue_row.addWidget(self.queue_label, stretch=1)
+        self.remove_selected_button = QPushButton("Remover selecionado")
+        self.remove_selected_button.clicked.connect(self._remove_selected)
+        self.clear_queue_button = QPushButton("Limpar fila")
+        self.clear_queue_button.clicked.connect(self._clear_queue)
+        queue_row.addWidget(self.remove_selected_button)
+        queue_row.addWidget(self.clear_queue_button)
+        outer.addLayout(queue_row)
+
+        self.queue_list = QListWidget()
+        self.queue_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.queue_list.setMaximumHeight(120)
+        outer.addWidget(self.queue_list)
 
         content = QWidget()
         content_layout = QVBoxLayout(content)
@@ -145,7 +168,7 @@ class WatermarkAddPage(QWidget):
 
         # -- Ações ------------------------------------------------------- #
         actions = QHBoxLayout()
-        self.process_button = QPushButton("💧 Aplicar marca d'água")
+        self.process_button = QPushButton("💧 Aplicar marca d'água na fila")
         self.process_button.setObjectName("Primary")
         self.process_button.setEnabled(False)
         self.process_button.clicked.connect(self._process)
@@ -244,14 +267,44 @@ class WatermarkAddPage(QWidget):
         logger.debug("Preset da marca d'água salvo.")
 
     # ------------------------------------------------------------------ #
-    def set_source(self, source: str) -> None:
-        """Define o vídeo de origem e habilita o botão conforme as opções."""
-        self._source = source
-        display = source if len(source) < 90 else source[:87] + "..."
-        self.source_label.setText(f"🎞 {display}")
+    def add_sources(self, sources: list[str]) -> None:
+        """Acrescenta vídeos à fila (ignora duplicados já presentes)."""
+        for source in sources:
+            if source in self._pending:
+                continue
+            self._pending.append(source)
+            display = source if len(source) < 90 else source[:44] + "..." + source[-40:]
+            item = QListWidgetItem(f"🎞 {display}")
+            item.setData(Qt.ItemDataRole.UserRole, source)
+            self.queue_list.addItem(item)
         self.open_folder_button.setVisible(False)
         self.status_label.setText("Pronto.")
+        self._refresh_queue_label()
         self._refresh_process_enabled()
+
+    def _remove_selected(self) -> None:
+        for item in self.queue_list.selectedItems():
+            source = item.data(Qt.ItemDataRole.UserRole)
+            if source in self._pending:
+                self._pending.remove(source)
+            self.queue_list.takeItem(self.queue_list.row(item))
+        self._refresh_queue_label()
+        self._refresh_process_enabled()
+
+    def _clear_queue(self) -> None:
+        self._pending.clear()
+        self.queue_list.clear()
+        self._refresh_queue_label()
+        self._refresh_process_enabled()
+
+    def _refresh_queue_label(self) -> None:
+        count = len(self._pending)
+        if count == 0:
+            self.queue_label.setText("Nenhum vídeo na fila.")
+        elif count == 1:
+            self.queue_label.setText("1 vídeo na fila.")
+        else:
+            self.queue_label.setText(f"{count} vídeos na fila.")
 
     def _current_options(self) -> WatermarkAddOptions:
         return WatermarkAddOptions(
@@ -270,8 +323,10 @@ class WatermarkAddPage(QWidget):
             bool(self.image_path.text().strip()) if mode == "image"
             else bool(self.text_value.text().strip())
         )
-        ready = self._source is not None and has_content and not self.is_running()
+        ready = bool(self._pending) and has_content and not self.is_running()
         self.process_button.setEnabled(ready)
+        self.remove_selected_button.setEnabled(not self.is_running())
+        self.clear_queue_button.setEnabled(not self.is_running())
 
     # ------------------------------------------------------------------ #
     # Processamento
@@ -293,24 +348,47 @@ class WatermarkAddPage(QWidget):
             self._worker.wait(3000)
 
     def _process(self) -> None:
-        if self._source is None:
+        if not self._pending:
             return
         self.save()
-        options = self._current_options()
+        self._total_in_batch = len(self._pending)
+        self._done_in_batch = 0
+        self._failures = []
+        self.process_button.setEnabled(False)
+        self.remove_selected_button.setEnabled(False)
+        self.clear_queue_button.setEnabled(False)
+        self.open_folder_button.setVisible(False)
+        self.progress.setVisible(True)
+        self._process_next()
 
-        output_path = self._build_output_path(self._source)
+    def _process_next(self) -> None:
+        if not self._pending:
+            self._on_batch_finished()
+            return
+
+        self._current_source = self._pending.pop(0)
+        self.queue_list.takeItem(0)
+        self._refresh_queue_label()
+
+        options = self._current_options()
+        output_path = self._build_output_path(self._current_source)
         self._worker = WatermarkAdderWorker(
-            self._source, output_path, options, use_gpu=self.settings.use_gpu,
+            self._current_source, output_path, options, use_gpu=self.settings.use_gpu,
         )
         self._worker.progressChanged.connect(self._on_progress)
         self._worker.succeeded.connect(self._on_succeeded)
         self._worker.failed.connect(self._on_failed)
+        # Só inicia o próximo item depois que a QThread realmente terminar
+        # (finished, não succeeded/failed) — trocar a referência de um
+        # QThread ainda em execução derruba o app.
+        self._worker.finished.connect(self._process_next)
         self._worker.start()
 
-        self.process_button.setEnabled(False)
-        self.open_folder_button.setVisible(False)
-        self.progress.setVisible(True)
-        self.status_label.setText("Iniciando...")
+        self._done_in_batch += 1
+        name = Path(self._current_source).name
+        self.status_label.setText(
+            f"Processando {self._done_in_batch}/{self._total_in_batch}: {name}"
+        )
 
     @staticmethod
     def _build_output_path(source: str) -> Path:
@@ -319,23 +397,45 @@ class WatermarkAddPage(QWidget):
         return C.WATERMARK_ADD_OUTPUT_DIR / f"{stem}_com_marca.mp4"
 
     def _on_progress(self, message: str) -> None:
-        self.status_label.setText(message)
+        name = Path(self._current_source).name if self._current_source else ""
+        prefix = f"[{self._done_in_batch}/{self._total_in_batch}] {name} — "
+        self.status_label.setText(prefix + message)
 
     def _on_succeeded(self, output_path: str) -> None:
         self._last_output = output_path
-        self.progress.setVisible(False)
-        self.status_label.setText(f"Concluído: {output_path}")
-        self.open_folder_button.setVisible(True)
-        self._refresh_process_enabled()
-        QMessageBox.information(
-            self, "Marca d'água aplicada", f"Vídeo salvo em:\n{output_path}",
-        )
 
     def _on_failed(self, message: str) -> None:
+        if self._current_source is not None:
+            self._failures.append(f"{Path(self._current_source).name}: {message}")
+
+    def _on_batch_finished(self) -> None:
+        self._current_source = None
+        self._worker = None
         self.progress.setVisible(False)
-        self.status_label.setText("Erro ao aplicar marca d'água.")
         self._refresh_process_enabled()
-        QMessageBox.warning(self, "Erro ao aplicar marca d'água", message)
+
+        ok_count = self._total_in_batch - len(self._failures)
+        if self._total_in_batch == 0:
+            return
+        if not self._failures:
+            self.status_label.setText(f"Concluído: {ok_count}/{self._total_in_batch} vídeo(s).")
+            self.open_folder_button.setVisible(self._last_output is not None)
+            QMessageBox.information(
+                self, "Marca d'água aplicada",
+                f"{ok_count} vídeo(s) processado(s) com sucesso.\n"
+                f"Salvos em:\n{C.WATERMARK_ADD_OUTPUT_DIR}",
+            )
+        else:
+            self.status_label.setText(
+                f"Concluído com erros: {ok_count}/{self._total_in_batch} vídeo(s) com sucesso."
+            )
+            self.open_folder_button.setVisible(self._last_output is not None)
+            details = "\n".join(self._failures)
+            QMessageBox.warning(
+                self, "Marca d'água concluída com erros",
+                f"{ok_count}/{self._total_in_batch} vídeo(s) processado(s) com sucesso.\n\n"
+                f"Falhas:\n{details}",
+            )
 
     def _open_output_folder(self) -> None:
         if not self._last_output:

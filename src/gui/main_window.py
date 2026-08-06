@@ -11,7 +11,9 @@ realmente usa.
 """
 from __future__ import annotations
 
+from PySide6.QtCore import QUrl
 from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import QHBoxLayout, QMessageBox, QStackedWidget, QWidget
 
 from src.config.settings import Settings
@@ -27,6 +29,7 @@ from src.workers.redub_worker import (
     RedubPrepareWorker,
     RedubTranslateWorker,
 )
+from src.workers.voice_preview_worker import VoicePreviewWorker
 
 logger = get_logger("main_window")
 
@@ -59,6 +62,11 @@ class MainWindow(QWidget):
         self.redub_worker: RedubPrepareWorker | RedubGenerateWorker | None = None
         self.redub_translate_worker: RedubTranslateWorker | None = None
         self._redub_preparation = None  # RedubPreparation da última transcrição (etapa 1)
+        self.voice_preview_worker: VoicePreviewWorker | None = None
+        self._voice_preview_requester: RedubPage | None = None  # página que pediu o teste
+        self._voice_preview_audio_output = QAudioOutput(self)
+        self._voice_preview_player = QMediaPlayer(self)
+        self._voice_preview_player.setAudioOutput(self._voice_preview_audio_output)
 
         self._build_ui()
         self._create_shortcuts()
@@ -97,6 +105,10 @@ class MainWindow(QWidget):
         self.redub.pauseRequested.connect(self._pause_redub_worker)
         self.redub.resumeRequested.connect(self._resume_redub_worker)
         self.redub.cancelRequested.connect(self._cancel_redub_worker)
+        self.redub.previewVoiceRequested.connect(
+            lambda voice: self._start_voice_preview(self.redub, voice)
+        )
+        self.redub.replayVoicePreviewRequested.connect(self._replay_voice_preview)
 
     def _create_shortcuts(self) -> None:
         """Atalho global: Ctrl+S salva a página aberta."""
@@ -124,6 +136,12 @@ class MainWindow(QWidget):
         worker = self.redub_worker or self.redub_translate_worker
         if exclude != "redublagem" and worker is not None and worker.isRunning():
             return "redublagem"
+        if (
+            exclude != "teste de voz"
+            and self.voice_preview_worker is not None
+            and self.voice_preview_worker.isRunning()
+        ):
+            return "teste de voz"
         return None
 
     def _start_redub_prepare(self, source: str) -> None:
@@ -243,6 +261,46 @@ class MainWindow(QWidget):
         self.redub.update_progress(0, "Cancelado.")
 
     # ------------------------------------------------------------------ #
+    # Teste de voz (botão "Testar voz" da Redublagem)
+    # ------------------------------------------------------------------ #
+    def _start_voice_preview(self, page: RedubPage, voice: str) -> None:
+        blocking = self._any_worker_running(exclude="teste de voz")
+        if blocking is not None:
+            QMessageBox.warning(
+                self, "Aguarde", f"Termine a {blocking} atual antes de testar uma voz.",
+            )
+            return
+        self._voice_preview_requester = page
+        page.set_preview_running(True)
+        self.voice_preview_worker = VoicePreviewWorker(self.settings, voice)
+        self.voice_preview_worker.succeeded.connect(self._on_voice_preview_ready)
+        self.voice_preview_worker.failed.connect(self._on_voice_preview_failed)
+        self.voice_preview_worker.start()
+        logger.info("Teste de voz iniciado (%s).", voice)
+
+    def _on_voice_preview_ready(self, path: str) -> None:
+        self.voice_preview_worker = None
+        page, self._voice_preview_requester = self._voice_preview_requester, None
+        if page is not None:
+            page.set_preview_running(False)
+            page.set_preview_ready()
+        self._voice_preview_player.setSource(QUrl.fromLocalFile(path))
+        self._voice_preview_player.play()
+
+    def _replay_voice_preview(self) -> None:
+        """Toca de novo o último teste de voz já gerado (sem sintetizar de novo)."""
+        if not self._voice_preview_player.source().isEmpty():
+            self._voice_preview_player.setPosition(0)
+            self._voice_preview_player.play()
+
+    def _on_voice_preview_failed(self, message: str) -> None:
+        self.voice_preview_worker = None
+        page, self._voice_preview_requester = self._voice_preview_requester, None
+        if page is not None:
+            page.set_preview_running(False)
+        QMessageBox.warning(self, "Erro no teste de voz", message)
+
+    # ------------------------------------------------------------------ #
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt API)
         """Garante que os workers são finalizados antes de fechar."""
         active = next(
@@ -266,6 +324,13 @@ class MainWindow(QWidget):
                 logger.warning("Worker não respondeu ao cancelamento; terminando.")
                 active.terminate()
                 active.wait(3000)
+
+        if self.voice_preview_worker is not None and self.voice_preview_worker.isRunning():
+            # Sem etapa de cancelamento (é uma síntese curta e única) — só
+            # espera terminar ou força, igual aos outros workers acima.
+            if not self.voice_preview_worker.wait(8000):
+                self.voice_preview_worker.terminate()
+                self.voice_preview_worker.wait(3000)
 
         if self.watermark_page.is_running():
             answer = QMessageBox.question(

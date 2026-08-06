@@ -68,7 +68,7 @@ def separate_vocals(
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=10800, creationflags=_CREATION_FLAGS,
+            timeout=None, creationflags=_CREATION_FLAGS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         logger.warning("Demucs indisponível (%s); seguindo sem separação.", exc)

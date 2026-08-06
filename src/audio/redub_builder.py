@@ -3,6 +3,7 @@ original de cada fala, e troca a trilha de áudio do vídeo (Redublagem).
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from src.audio.tts import audio_duration, synthesize
@@ -20,6 +21,26 @@ logger = get_logger("redub_builder")
 _MIN_TEMPO = 0.8
 _MAX_TEMPO = 1.3
 
+# Reticências/pontuação repetida ("....", "…", "!!!") viram pausa real na
+# fala pro TTS. Texto traduzido fora do pipeline (colado de um ChatGPT/Claude
+# qualquer, sem instrução de tom de narração) costuma vir cheio disso, dando
+# o efeito de narração "espaçada" que o tempo de sincronia por trecho não
+# previa — normaliza antes de sintetizar, independente de onde o texto veio.
+_ELLIPSIS_RE = re.compile(r"\.{2,}|…")
+_REPEATED_PUNCT_RE = re.compile(r"([!?,;:])\1+")
+_SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([.,!?;:])")
+_MULTI_SPACE_RE = re.compile(r"\s{2,}")
+
+
+def _clean_narration_text(text: str) -> str:
+    """Normaliza pontuação repetida antes da síntese (ver comentário acima
+    das constantes `_ELLIPSIS_RE`/`_REPEATED_PUNCT_RE`)."""
+    cleaned = _ELLIPSIS_RE.sub(",", text)
+    cleaned = _REPEATED_PUNCT_RE.sub(r"\1", cleaned)
+    cleaned = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", cleaned)
+    cleaned = _MULTI_SPACE_RE.sub(" ", cleaned)
+    return cleaned.strip(" ,")
+
 
 def _silence_clip(duration: float, output: Path) -> Path:
     run_ffmpeg([
@@ -31,11 +52,14 @@ def _silence_clip(duration: float, output: Path) -> Path:
 
 def _segment_clip(
     text: str, voice: str, target_duration: float, workdir: Path, tag: str,
-    api_key: str = "",
+    api_key: str = "", reference_audio: str = "", use_gpu: bool = True,
 ) -> tuple[Path, float] | None:
     """Sintetiza a fala do trecho e ajusta a velocidade pra caber (aprox.)
     no tempo original. Retorna (caminho, duração real após o ajuste)."""
-    raw = synthesize(text, voice, workdir / f"{tag}_raw.mp3", api_key=api_key)
+    raw = synthesize(
+        text, voice, workdir / f"{tag}_raw.mp3", api_key=api_key,
+        reference_audio=reference_audio, use_gpu=use_gpu,
+    )
     if raw is None:
         return None
     raw_duration = audio_duration(raw)
@@ -53,6 +77,7 @@ def _segment_clip(
 
 def build_narration_track(
     segments: list[TranscriptSegment], voice: str, workdir: Path, api_key: str = "",
+    reference_audio: str = "", use_gpu: bool = True,
 ) -> Path:
     """Gera uma trilha de narração de IA contínua, sincronizada por trecho.
 
@@ -61,18 +86,32 @@ def build_narration_track(
     anterior estourou o tempo mesmo com o `atempo` limitado, o próximo
     começa colado, sem esperar — evita que o desvio se acumule ao longo do
     vídeo inteiro em vez de corrigir só no ponto onde ele aconteceu.
+
+    O silêncio inserido antes de cada trecho nunca passa da pausa que já
+    existia ali no vídeo original (`seg.start` menos o fim do trecho
+    anterior): sem esse teto, um trecho traduzido que sai mais curto que o
+    original (comum na Redublagem — a tradução muda a duração da fala, mas
+    o tempo-alvo de cada trecho continua sendo o do idioma original) atrasa
+    o cursor, e a pausa antes do próximo trecho vira maior que a do vídeo
+    original, dando a sensação de narração "pausada/espaçada".
     """
     pieces: list[Path] = []
     cursor = 0.0
+    prev_end = 0.0
     for i, seg in enumerate(segments):
-        text = seg.text.strip()
+        text = _clean_narration_text(seg.text.strip())
         if not text:
             continue
-        gap = seg.start - cursor
+        original_gap = max(seg.start - prev_end, 0.0)
+        gap = min(seg.start - cursor, original_gap)
         if gap > 0.02:
             pieces.append(_silence_clip(gap, workdir / f"gap_{i:04d}.wav"))
             cursor += gap
-        result = _segment_clip(text, voice, seg.duration, workdir, f"seg_{i:04d}", api_key=api_key)
+        result = _segment_clip(
+            text, voice, seg.duration, workdir, f"seg_{i:04d}",
+            api_key=api_key, reference_audio=reference_audio, use_gpu=use_gpu,
+        )
+        prev_end = seg.end
         if result is None:
             logger.warning("Narração do trecho %d falhou; seguindo sem ele.", i)
             continue
@@ -129,6 +168,13 @@ def mux_final_audio(
         audio_graph = f"[1:a]apad,atrim=0:{duration:.3f},asetpts=N/SR/TB[aout]"
     gpu_args = use_gpu and gpu_encoder_args(crf)
     video_args = gpu_args or ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf)]
+    # Sem GPU, o encode de vídeo (libx264) é CPU-bound e escala com a
+    # duração — um timeout fixo (ex.: 1h) corta no meio vídeos longos que
+    # simplesmente precisam de mais tempo, mesmo progredindo normalmente.
+    # Usa um múltiplo generoso da duração do vídeo em vez de um valor fixo,
+    # mantendo um piso pra vídeos curtos não ficarem reféns de travamentos
+    # reais do ffmpeg.
+    timeout = max(3600, int(duration * 4) + 600)
     run_ffmpeg([
         *inputs,
         "-filter_complex", audio_graph,
@@ -138,7 +184,7 @@ def mux_final_audio(
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-movflags", "+faststart",
         str(output),
-    ], timeout=3600)
+    ], timeout=timeout)
     logger.info(
         "Vídeo redublado exportado (%s): %s", "GPU" if gpu_args else "CPU", output,
     )

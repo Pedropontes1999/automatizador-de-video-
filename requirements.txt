@@ -26,6 +26,12 @@ python-docx>=1.1.0
 # Narração por IA: ElevenLabs (nuvem, paga - usa só `requests`, já listado
 # acima; chave em Configurações). Motores locais antigos (XTTS/Coqui, Edge
 # TTS) foram removidos.
+#
+# Chatterbox Multilingual (local, grátis, sem chave de API) - baixa o modelo
+# (alguns GB) do Hugging Face na 1a execução. torchaudio não vem junto do
+# torch instalado acima, por isso listado à parte.
+chatterbox-tts>=0.1.0
+torchaudio>=2.3.0
 
 # Separação de voz/música (Redublagem) - baixa modelo pré-treinado na 1a execução
 demucs>=4.1.0

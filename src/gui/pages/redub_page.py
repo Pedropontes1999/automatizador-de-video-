@@ -49,6 +49,8 @@ class RedubPage(QWidget):
     transcribeRequested = Signal(str)   # caminho do arquivo ou URL (etapa 1)
     translateRequested = Signal(object)  # list[str] a traduzir (etapa 1.5, opcional)
     generateRequested = Signal(object)  # list[str], uma linha por trecho (etapa 2)
+    previewVoiceRequested = Signal(str)  # voice ("eleven:..."/"chatterbox:...") a testar
+    replayVoicePreviewRequested = Signal()  # toca de novo o último teste já gerado
     pauseRequested = Signal()
     resumeRequested = Signal()
     cancelRequested = Signal()
@@ -100,10 +102,44 @@ class RedubPage(QWidget):
 
         # -- Voz da nova narração --------------------------------------- #
         form.addRow(self._section("🎙 Nova narração"))
+        voice_row = QHBoxLayout()
         self.voice = QComboBox()
         for voice, label in C.TTS_VOICES.items():
             self.voice.addItem(label, userData=voice)
-        form.addRow("Voz:", self.voice)
+        self.preview_voice_button = QPushButton("▶ Testar voz")
+        self.preview_voice_button.setToolTip(
+            f'Gera e toca um trecho curto ("{C.VOICE_PREVIEW_TEXT}") com a '
+            "voz selecionada acima, sem precisar transcrever nenhum vídeo."
+        )
+        self.preview_voice_button.clicked.connect(self._preview_voice)
+        self.replay_voice_button = QPushButton("🔁 Ouvir de novo")
+        self.replay_voice_button.setToolTip("Toca de novo o último teste de voz gerado.")
+        self.replay_voice_button.setEnabled(False)
+        self.replay_voice_button.clicked.connect(self.replayVoicePreviewRequested.emit)
+        voice_row.addWidget(self.voice, stretch=1)
+        voice_row.addWidget(self.preview_voice_button)
+        voice_row.addWidget(self.replay_voice_button)
+        form.addRow("Voz:", voice_row)
+
+        chatterbox_hint = QLabel(
+            "A voz \"Personalizada (Chatterbox)\" clona a partir do áudio de "
+            "referência abaixo (5-15s, fala limpa, sem música/ruído) — sem "
+            "escolher nada, ela usa a voz embutida padrão do modelo. Roda no "
+            "seu computador, sem custo por caractere (ao contrário da "
+            "ElevenLabs)."
+        )
+        chatterbox_hint.setObjectName("Muted")
+        chatterbox_hint.setWordWrap(True)
+        form.addRow(chatterbox_hint)
+        self.chatterbox_reference_path = QLineEdit()
+        self.chatterbox_reference_path.setReadOnly(True)
+        self.chatterbox_reference_path.setPlaceholderText(
+            "Nenhum áudio de referência escolhido (voz padrão do Chatterbox)"
+        )
+        form.addRow(
+            "Referência (Chatterbox):",
+            self._file_row(self.chatterbox_reference_path, self._pick_chatterbox_reference),
+        )
 
         # -- Música de fundo ----------------------------------------------- #
         form.addRow(self._section("🎵 Música de fundo"))
@@ -259,11 +295,37 @@ class RedubPage(QWidget):
         if path:
             self.music_path.setText(path)
 
+    def _pick_chatterbox_reference(self) -> None:
+        patterns = " ".join(f"*{ext}" for ext in C.SUPPORTED_AUDIO_EXTENSIONS)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Escolher áudio de referência", "", f"Áudios/Vídeos ({patterns})",
+        )
+        if path:
+            self.chatterbox_reference_path.setText(path)
+
+    def _preview_voice(self) -> None:
+        """Pede pra MainWindow gerar e tocar um trecho curto de teste com a
+        voz selecionada (não depende de vídeo/transcrição nenhuma)."""
+        self._save_values()
+        self.previewVoiceRequested.emit(self.voice.currentData())
+
+    def set_preview_running(self, running: bool) -> None:
+        """Alterna o estado visual do botão "Testar voz" durante a geração."""
+        self.preview_voice_button.setEnabled(not running)
+        self.preview_voice_button.setText("⏳ Gerando..." if running else "▶ Testar voz")
+        if running:
+            self.replay_voice_button.setEnabled(False)
+
+    def set_preview_ready(self) -> None:
+        """Habilita "Ouvir de novo" após um teste de voz ser gerado com sucesso."""
+        self.replay_voice_button.setEnabled(True)
+
     # ------------------------------------------------------------------ #
     def _load_values(self) -> None:
         s = self.settings
         voice_index = self.voice.findData(s.redub_voice)
         self.voice.setCurrentIndex(max(voice_index, 0))
+        self.chatterbox_reference_path.setText(s.chatterbox_reference_path)
         self.music_path.setText(s.redub_music_path)
         self.music_volume.setValue(s.redub_music_volume)
 
@@ -275,6 +337,7 @@ class RedubPage(QWidget):
         """Persiste as opções da Redublagem em Settings/config.json."""
         s = self.settings
         s.redub_voice = self.voice.currentData()
+        s.chatterbox_reference_path = self.chatterbox_reference_path.text().strip()
         s.redub_music_path = self.music_path.text().strip()
         s.redub_music_volume = self.music_volume.value()
         s.save()
@@ -346,6 +409,7 @@ class RedubPage(QWidget):
         self.generate_button.setEnabled(not running and self._segment_count > 0)
         self.translate_button.setEnabled(not running and self._segment_count > 0)
         self.text_edit.setReadOnly(running)
+        self.preview_voice_button.setEnabled(not running)
 
     def request_generate(self) -> None:
         """Dispara a etapa 2: gera a nova narração a partir do texto revisado."""
@@ -393,6 +457,7 @@ class RedubPage(QWidget):
         self.pause_button.setEnabled(running)
         self.cancel_button.setVisible(running)
         self.cancel_button.setEnabled(running)
+        self.preview_voice_button.setEnabled(not running)
         if running:
             self._started_at = time.monotonic()
             self._elapsed_timer.start()

@@ -36,6 +36,7 @@ class EditOptions:
     narration_text: str = ""
     narration_voice: str = ""
     narration_api_key: str = ""        # chave da ElevenLabs (Settings.elevenlabs_api_key)
+    narration_reference_audio: str = ""  # clipe de referência do Chatterbox (Settings.chatterbox_reference_path)
     narration_position: str = "start"  # start | custom | end
     narration_time: float = 0.0        # segundos do vídeo (só quando "custom")
 
@@ -84,6 +85,8 @@ def edit_video(
             options.narration_text, options.narration_voice,
             workdir / "narracao.mp3",
             api_key=options.narration_api_key,
+            reference_audio=options.narration_reference_audio,
+            use_gpu=use_gpu,
         )
         if tts_path is not None:
             tts_seconds = tts.audio_duration(tts_path)

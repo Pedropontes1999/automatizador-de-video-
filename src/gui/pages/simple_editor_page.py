@@ -305,6 +305,7 @@ class SimpleEditorPage(QWidget):
             ),
             narration_voice=self.narration_voice.currentData(),
             narration_api_key=self.settings.elevenlabs_api_key,
+            narration_reference_audio=self.settings.chatterbox_reference_path,
             narration_position=self.narration_position.currentData(),
             narration_time=self.narration_time.value(),
         )
